@@ -1,16 +1,48 @@
 Bootstrap: docker
 From: ubuntu:latest
 
-%files
-    set_tmp_cache_dir.sh set_tmp_cache_dir.sh
-
 %post
-    # Update package list 
+    # Update package list
     apt-get update
 
-    chmod +x set_tmp_cache_dir.sh
+    # Create a script to set up temporary and cache directories
+    cat <<EOF > /usr/local/bin/set_tmp_cache_dir.sh
+#!/bin/sh
+# Script to configure temporary and cache directories for Apptainer and Firedrake
 
-    ./set_tmp_cache_dir.sh
+# Define directories for temporary files and caches
+APPTAINER_TMPDIR="container_cache/apptainer_tmp"
+APPTAINER_CACHEDIR="container_cache/apptainer_cache"
+PERSISTENT_DIR="container_cache/icepack_cache"
+
+# Ensure directories exist or clean them
+for dir in "\$APPTAINER_TMPDIR" "\$APPTAINER_CACHEDIR" "\$PERSISTENT_DIR"; do
+    if [ ! -d "\$dir" ]; then
+        mkdir -p "\$dir"
+    else
+        rm -rf "\$dir"/*
+    fi
+
+    # Create persistent subdirectories only for PERSISTENT_DIR
+    if [ "\$dir" = "\$PERSISTENT_DIR" ]; then
+        mkdir -p "\$PERSISTENT_DIR/pyop2" "\$PERSISTENT_DIR/tsfc" "\$PERSISTENT_DIR/xdg"
+    fi
+done
+
+# Export environment variables
+export APPTAINER_TMPDIR="\$APPTAINER_TMPDIR"
+export APPTAINER_CACHEDIR="\$APPTAINER_CACHEDIR"
+export PYOP2_CACHE_DIR="\$PERSISTENT_DIR/pyop2"
+export FIREDRAKE_TSFC_KERNEL_CACHE_DIR="\$PERSISTENT_DIR/tsfc"
+export XDG_CACHE_HOME="\$PERSISTENT_DIR/xdg"
+export HDF5_MPI=ON
+EOF
+
+    # Make the script executable
+    chmod +x /usr/local/bin/set_tmp_cache_dir.sh
+
+    # Optionally source the script for default execution in container sessions
+    echo ". /usr/local/bin/set_tmp_cache_dir.sh" >> /etc/profile
 
     # Install essential development packages first
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -72,44 +104,98 @@ From: ubuntu:latest
     python3 -m ipykernel install --user --name=firedrake
 
     # install pyomp for parallel capabilities
-    conda create --name py-omp python=3.10
-    conda activate py-omp
-    conda install -c python-for-hpc -c conda-forge pyomp
+    # conda create --name py-omp python=3.10
+    # conda activate py-omp
+    # conda install -c python-for-hpc -c conda-forge pyomp
 
 %environment
+    # Add Miniconda to the PATH
     export PATH="/root/miniconda3/bin:$PATH"
-    conda activate py-omp
+
+    # Set HDF5 MPI support
     export HDF5_MPI=ON
+
+    # Configure OpenMP and BLAS threading
     export OMP_NUM_THREADS=1
     export OPENBLAS_NUM_THREADS=1
+
+    # Activate Firedrake environment
     . /firedrake/bin/activate
+
+    # PETSc configuration
     export PETSC_DIR=/firedrake/src/petsc
     export PETSC_ARCH=default
-    export PERSISTENT_DIR="/scratch/icepack_cache"
+
+    # Persistent directories for caching
+    export PERSISTENT_DIR="container_cache/icepack_cache"
     export PYOP2_CACHE_DIR=$PERSISTENT_DIR/pyop2
     export FIREDRAKE_TSFC_KERNEL_CACHE_DIR=$PERSISTENT_DIR/tsfc
     export XDG_CACHE_HOME=$PERSISTENT_DIR/xdg
-    ./set_tmp_cache_dir.sh
+
+    # Run the temporary/cache directory setup script
+    if [ -f /usr/local/bin/set_tmp_cache_dir.sh ]; then
+        . /usr/local/bin/set_tmp_cache_dir.sh
+    fi
 
 %runscript
     #!/bin/bash
-    # commands to execute when the container is launched
-    . /firedrake/bin/activate 
-    python3 "$@"
-    # /opt/venv/bin/python3
-    exec /bin/bash
-    ./set_tmp_cache_dir.sh
+    # Default commands to execute when the container is launched
 
+    # Activate Firedrake environment
+    if [ -f /firedrake/bin/activate ]; then
+        . /firedrake/bin/activate
+    else
+        echo "Error: Firedrake environment not found. Exiting."
+        exit 1
+    fi
+
+    # Run the temporary/cache directory setup script
+    if [ -f /usr/local/bin/set_tmp_cache_dir.sh ]; then
+        . /usr/local/bin/set_tmp_cache_dir.sh
+    else
+        echo "Warning: Temporary/cache directory setup script not found. Proceeding without it."
+    fi
+
+    # Execute the given command (if any) using Python3
+    if [ "$#" -gt 0 ]; then
+        python3 "$@"
+    else
+        echo "No command specified. Starting interactive Bash session..."
+        exec /bin/bash
+    fi
 
 %labels
-    Author Brian Kyanjo
-    ContactEmail bkyanjo3@gatech.edu
-    Name Firedrake-icepack container
+    Author "Brian Kyanjo"
+    ContactEmail "bkyanjo3@gatech.edu"
+    Name "Firedrake-Icepack Container"
+    Version "1.0"
+    Description "An Apptainer container for Firedrake and Icepack with all necessary dependencies configured and activated."
+
 
 %help
-    This Apptainer container ubuntu-based definition configures 
-    and installs the necessary dependencies of firedrake and icepack 
-    plus activating their environments. To use this container, just 
-    run: 1. $ apptainer build icepack.sif firedrake-icepack-ubuntu.def #this creates .sif image
-         2. $ apptainer shell icepack.sif # this starts the apptainer shell
-         3. $ apptainer exec icepack.sif script.py
+    This Apptainer container is based on Ubuntu and configures all the 
+    necessary dependencies for running Firedrake and Icepack. It also 
+    sets up and activates their respective environments for seamless usage.
+
+    ### Building the Container:
+    1. Build the container using the definition file:
+       $ apptainer build icepack.sif firedrake-icepack-ubuntu.def
+
+    ### Using the Container:
+    1. Start an interactive Apptainer shell:
+       $ apptainer shell icepack.sif
+
+    2. Execute a Python script directly within the container:
+       $ apptainer exec icepack.sif python3 script.py
+
+    3. Alternatively, run the container interactively with a Python command:
+       $ apptainer exec icepack.sif python3
+
+    4. On the cluster, run 
+        $ srun apptainer exec icepack.sif python3 
+
+    ### Notes:
+    - Ensure that Apptainer is installed on your system.
+    - The container automatically sets up necessary environment variables 
+      and directories for Firedrake and Icepack, including persistent 
+      cache and temporary directories.

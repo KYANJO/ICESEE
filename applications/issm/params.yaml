@@ -1,0 +1,35 @@
+physical-parameters:
+  # Lorenz96 Model parameters
+  sigma: 10.0            
+  beta: 8.0/3.0 
+  rho: 28.0  
+
+modeling-parameters:
+  # Modeling parameters
+  dt: 0.01                 
+  num_years: 10          # number of years to run the model
+  timesteps_per_year: 2   # number of timesteps per year
+
+enkf-parameters:
+  # Ensemble Kalman Filter parameters
+  Nens: 1000              # number of ensemble members
+  m_obs: 10               # number of observations
+  freq_obs: 0.2           # frequency of observations
+  tm_m: 2                 # maximum time for observations
+
+  num_state_vars: 3       # number of state variables 
+
+  # Statistical parameters
+  sig_model: 0.1          # model error standard deviation
+  sig_obs: 0.1           # observation error standard deviation
+  sig_Q: 0.0             # process noise standard deviation
+
+  seed: 1                 # seed for random number generator
+  inflation_factor: 1.0          # inflation factor
+
+  # enkf model parameters
+  model_name: "lorenz96"         # name of the model
+  filter_type: "EnTKF"           # name of the filter: EnKF, DEnKF, EnTKF, EnRSKF
+  parallel_flag: "mpi"        # parallel flag: Serial, MPI
+  commandlinerun: "True"         # command line run flag: True, False
+ 
