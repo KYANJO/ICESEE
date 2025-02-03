@@ -174,6 +174,8 @@ params = {
     "freq_obs": float(enkf_params["freq_obs"]),
     "obs_max_time": int(float(enkf_params["obs_max_time"])),
     "obs_start_time": float(enkf_params["obs_start_time"]),
+    "localization_flag": bool(enkf_params["localization_flag"]),
+    
 }
 
 kwargs = {"a":a, "h0":h0, "u0":u0, "C":C, "A":A,"Q":Q,"V":V, "da":float(modeling_params["da"]),

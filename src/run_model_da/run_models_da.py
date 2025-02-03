@@ -8,6 +8,7 @@
 # --- Imports ---
 from _utility_imports import *
 import tqdm
+from scipy.sparse import csr_matrix
 
 src_dir = os.path.join(project_root, 'src')
 applications_dir = os.path.join(project_root, 'applications')
@@ -48,13 +49,26 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
     EnRSKF_flag = re.match(r"\AEnRSKF\Z", filter_type, re.IGNORECASE)
     EnTKF_flag = re.match(r"\AEnTKF\Z", filter_type, re.IGNORECASE)
 
+    # get the grid points
+    if params["localization_flag"]:
+        x_points = np.linspace(0, model_kwargs["Lx"], model_kwargs["nx"])
+        y_points = np.linspace(0, model_kwargs["Ly"], model_kwargs["ny"])
+        # use nd instead of nx and ny
+        # x_points = np.linspace(0, model_kwargs["Lx"], nd)
+        # y_points = np.linspace(0, model_kwargs["Ly"], nd)
+        grid_x, grid_y = np.meshgrid(x_points, y_points)
+
+
     km = 0
-    radius = 2
+    # radius = 2
     for k in tqdm.trange(params["nt"]):
         # background step
         # statevec_bg = model_module.background_step(k,statevec_bg, hdim, **model_kwargs)
 
         EnKFclass = EnKF(parameters=params, parallel_flag = parallel_flag)
+
+        # save a copy of initial ensemble
+        ensemble_init = statevec_ens.copy()
         
         statevec_ens = EnKFclass.forecast_step(statevec_ens, \
                                                model_module.forecast_step_single, \
@@ -77,6 +91,37 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
             # check if params["sig_obs"] is a scalar
             if isinstance(params["sig_obs"], (int, float)):
                 params["sig_obs"] = np.ones(params["nt"]+1) * params["sig_obs"]
+
+            # --- Addaptive localization
+            # compute the distance between observation and the ensemble members
+            # dist = np.linalg.norm(statevec_ens - np.tile(hu_obs[:,km].reshape(-1,1),N), axis=1)
+                
+            # get the localization weights
+            # localization_weights = UtilsFunctions(params, statevec_ens)._adaptive_localization(dist, \
+                                                # ensemble_init=ensemble_init, loc_type="Gaspari-Cohn")
+
+            # method 2
+            # get the cut off distance between grid points
+            # cutoff_distance = np.linspace(0, 5, Cov_model.shape[0])
+            # localization_weights = UtilsFunctions(params, statevec_ens)._adaptive_localization_v2(cutoff_distance)
+            # print(localization_weights)
+            # get the shur product of the covariance matrix and the localization matrix
+            # Cov_model = np.multiply(Cov_model, localization_weights)
+
+            # method 3
+            if params["localization_flag"]:
+                # radius = 1.5
+                radius = UtilsFunctions(params, statevec_ens).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=2.0, method='correlation')
+                # print(f"Adaptive localization radius: {radius}")
+                localization_weights = UtilsFunctions(params, statevec_ens).create_tapering_matrix(grid_x, grid_y, radius)
+                localization_weights_resized = np.eye(Cov_model.shape[0])
+                localization_weights_resized[:localization_weights.shape[0], :localization_weights.shape[1]] = localization_weights
+
+                # Convert to sparse representation
+                localization_weights = csr_matrix(localization_weights_resized)
+
+                # Apply sparse multiplication
+                Cov_model = csr_matrix(Cov_model).multiply(localization_weights)
 
             # Call the EnKF class for the analysis step
             analysis  = EnKF(Observation_vec=  UtilsFunctions(params, statevec_ens).Obs_fun(hu_obs[:,km]), 

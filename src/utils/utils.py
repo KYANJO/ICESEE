@@ -11,6 +11,9 @@ import numpy as np
 import re
 from collections.abc import Iterable
 from scipy.stats import norm
+from scipy.interpolate import interp1d
+from scipy.spatial.distance import cdist
+
 
 # --- helper functions ---
 def isiterable(obj):
@@ -201,29 +204,220 @@ class UtilsFunctions:
             for ens_idx in range(ens_size):
                 state = inflated_ensemble[:, ens_idx]
                 if _scalar:
-                    # state = (state.axpy(-1.0, mean_vec)).scale(_inflation_factor)
                     state = (state - mean_vec) * _inflation_factor
                 else:
-                    # state = (state.axpy(-1.0, mean_vec)).multiply(_inflation_factor)
                     state = (state - mean_vec) * _inflation_factor
 
-                # inflated_ensemble[:, ens_idx] = state.add(mean_vec)
                 inflated_ensemble[:, ens_idx] = state + mean_vec
         else:
             inflated_ensemble = np.zeros(self.ensemble.shape)
             for ens_idx in range(ens_size):
                 state = self.ensemble[:, ens_idx].copy()
                 if _scalar:
-                    # state = (state.axpy(-1.0, mean_vec)).scale(_inflation_factor)
                     state = (state - mean_vec) * _inflation_factor
                 else:
-                    # state = (state.axpy(-1.0, mean_vec)).multiply(_inflation_factor)
                     state = (state - mean_vec) * _inflation_factor
 
-                # inflated_ensemble[:, ens_idx] = state.add(mean_vec)
                 inflated_ensemble[:, ens_idx] = state + mean_vec
         
         return inflated_ensemble
+    
+    def _inflate_ensemble(self,rescale=False):
+        """inflate ensemble members by a given factor"""
+
+        _inflation_factor = float(self.params['inflation_factor'])
+        x = np.mean(self.ensemble, axis=0, keepdims=True)
+        X = self.ensemble - x
+
+        # rescale the ensemble to correct the variance
+        if rescale:
+            N, M = self.ensemble.shape
+            X *= np.sqrt(N/(N-1))
+
+        x = x.squeeze(axis=0)
+
+        if _inflation_factor == 1.0:
+            return self.ensemble
+        else:
+            return x + _inflation_factor * X
+
+
+    def _localization_matrix(self,euclidean_distance, localization_radius, loc_type='Gaspari-Cohn'):     
+        """
+        Calculate the localization matrix based on the localization type, euclean_distance and radius
+        of influence.
+        
+        Parameters:
+        euclidean_distance (numpy array): The Euclidean distance between the observation and state
+        localization_radius (float or numpy array): Distance beyond which the localization matrix is tapered to zero.
+        method (str): The localization method.
+        
+        Returns:
+        numpy array: The localization matrix (same size as the Euclidean distance).
+        """
+
+        # Get original shape
+        dist_size = euclidean_distance.shape
+
+        # Gaspari-Cohn localization
+        if re.match(r'\Agaspari(_|-)*cohn\Z', loc_type, re.IGNORECASE):
+            # Normalize distances relative to localization radius
+            radius = euclidean_distance.flatten() / (0.5 * localization_radius)
+
+            # Initialize localization matrix with zeros
+            localization_matrix = np.zeros_like(radius)
+
+            # Gaspari-Cohn function
+            mask0 = radius < 1
+            mask1 = (radius >= 1) & (radius < 2)
+
+            # Compute values where radius < 1
+            loc_func0 = (((-0.25 * radius + 0.5) * radius + 0.625) * radius - 5.0 / 3.0) * radius**2 + 1
+            localization_matrix[mask0] = loc_func0[mask0]
+
+            # Compute values where 1 <= radius < 2
+            radius_safe = np.where(radius == 0, 1e-10, radius)  # Avoid division by zero
+            loc_func1 = ((((1.0 / 12.0 * radius_safe - 0.5) * radius_safe + 0.625) * radius_safe + 5.0 / 3.0) * radius_safe - 5.0) * radius_safe + 4.0 - 2.0 / 3.0 / radius_safe
+            localization_matrix[mask1] = loc_func1[mask1]
+            return localization_matrix.reshape(dist_size)
+        # Gaussian localization
+        elif re.match(r'\Agaussian\Z', loc_type, re.IGNORECASE):
+            return np.exp(-0.5 * (euclidean_distance / localization_radius)**2)
+
+        else:
+            raise ValueError(f"Unknown localization type: {loc_type}")
+
+    import numpy as np
+
+    def compute_sample_correlations_vectorized(self, shuffled_ens, forward_ens):
+        """
+        Compute sample correlations between shuffled_ens and forward_ens in a vectorized manner.
+        
+        Parameters:
+            shuffled_ens (np.ndarray): Array of shape (n_members, n_variables) representing the shuffled ensemble.
+            forward_ens (np.ndarray): Array of shape (n_members, n_variables) representing the forward ensemble.
+        
+        Returns:
+            np.ndarray: An array of correlation coefficients (one per variable).
+        """
+        # Number of ensemble members
+        Nens = self.ensemble.shape[1]
+
+        # Compute means for each variable (column-wise)
+        mean_shuffled = np.mean(shuffled_ens, axis=0)
+        mean_forward = np.mean(forward_ens, axis=0)
+
+        # Center the ensembles by subtracting the means
+        centered_shuffled = shuffled_ens - mean_shuffled
+        centered_forward = forward_ens - mean_forward
+
+        # Compute the covariance for each variable (element-wise multiplication, then sum over rows)
+        cov = np.sum(centered_shuffled * centered_forward, axis=0) / (Nens - 1)
+
+        # Compute the standard deviations for each variable with Bessel's correction (ddof=1)
+        std_shuffled = np.std(shuffled_ens, axis=0, ddof=1)
+        std_forward = np.std(forward_ens, axis=0, ddof=1)
+
+        # Calculate the correlation coefficient for each variable
+        correlations = cov / (std_shuffled * std_forward)
+
+        return correlations
+
+    
+    def _adaptive_localization(self, euclidean_distance=None, 
+                              localization_radius=None, ensemble_init=None, loc_type='Gaspari-Cohn'):
+        """Adaptively calculates the radius of influence for each observation density
+           which is then used to dynamically compute the localization matrix.
+           returns: adaptive localization matrix
+        @reference: See https://doi.org/10.1016/j.petrol.2019.106559 for more details
+        """
+
+        # get the shape of the ensemble size
+        nd, Nens = self.ensemble.shape
+
+        # if localization radius is not provided, use the adaptive method
+        if localization_radius is None:
+            # correlation based localization
+            if Nens >= 30:
+                # random shuffle the initial ensemble
+                np.random.shuffle(ensemble_init)
+                # ensemble members after forward simulation
+                forward_ens = self.ensemble
+
+                # get initial sample correlation btn the shuffled and forward ens
+                # sample_correlations = self.compute_sample_correlations_vectorized(shuffled_ens, forward_ens)
+                sample_correlations = np.corrcoef(ensemble_init, forward_ens, rowvar=False)
+                
+                # # subsitute noise field of sample_correlations 
+                # sample_correlations[np.isnan(sample_correlations)] = 0
+
+                # use the MAD rule to estimate noise levels; sig_gs = median(abs(eta_gs))/0.6745
+                sig_gs = np.median(np.abs(sample_correlations), axis=0) / 0.6745
+
+                # use the universal rule to subsitute noise fields; theta_gs = sqrt(2*ln(number of rho_gs))*sig_gs
+                theta_gs = np.sqrt(2 * np.log(Nens)) * sig_gs
+
+                # construct the tapering matrix by applying the the estimated noise levels 
+                # to the sample correlations
+                tapering_matrix = np.exp(-0.5 * (sample_correlations / theta_gs)**2)
+
+            # distance based localization
+            else:
+                # if the dist between the model variable and the observation is zero, then the weight is 1
+                if np.any(euclidean_distance == 0): 
+                    localization_matrix = np.ones(self.ensemble.shape[0])
+                    return localization_matrix
+
+                # use a type based on variance  
+                var = np.var(self.ensemble,axis=0)
+                avg_var = np.mean(var)
+                localization_radius = self.params['base_radius'] * np.sqrt(1 + self.params['scaling_factor'] * np.sqrt(avg_var))
+
+                # call the localization matrix function
+                localization_matrix = self._localization_matrix(euclidean_distance, localization_radius)
+                return localization_matrix
+        else:
+            # call the localization matrix function
+            localization_matrix = self._localization_matrix(euclidean_distance, localization_radius)
+            return localization_matrix
+
+    import numpy as np
+
+    def _adaptive_localization_v2(self, cutoff_distance):
+        """
+        Compute an adaptive localization matrix based on ensemble correlations.
+
+        Parameters:
+        cutoff_distance (numpy array): Predefined cutoff distances for localization.
+
+        Returns:
+        numpy array: The computed localization matrix.
+        """
+        # Get ensemble size
+        nd, Nens = self.ensemble.shape
+
+        # Compute correlation matrix
+        R = np.corrcoef(self.ensemble, rowvar=False)
+
+        # Compute threshold for localization radius
+        rad_flag = 1 / np.sqrt(Nens - 1)
+
+        # Find the first occurrence where correlation drops below threshold
+        mask = R < rad_flag  # Boolean mask
+
+        # Get the first (i, j) index where R[i, j] < rad_flag
+        indices = np.argwhere(mask)  # Get all (i, j) pairs that satisfy the condition
+        
+        if indices.size > 0:
+            first_i = indices[0, 0]  # First valid row index
+            radius = cutoff_distance[first_i]  # Assign corresponding cutoff distance
+
+            # Call the localization matrix function with the scalar radius
+            localization_matrix = self._localization_matrix(cutoff_distance, radius)
+            return localization_matrix
+
+        # Return None if no valid index found (handle this case as needed)
+        return None
 
     def rmse(self,truth, estimate):
         """
@@ -238,105 +432,136 @@ class UtilsFunctions:
         """
         return np.sqrt(np.mean((truth - estimate) ** 2))
 
+    def compute_euclidean_distance(self, grid_x, grid_y):
+        """
+        Compute the Euclidean distance matrix between all grid points.
 
+        Parameters:
+        grid_x (numpy array): X-coordinates of the grid points (1D array).
+        grid_y (numpy array): Y-coordinates of the grid points (1D array).
 
-def localization_matrix(euclidean_distance, cutoff_radius, method):
+        Returns:
+        numpy array: Euclidean distance matrix (NxN, where N = number of grid points).
+        """
+        # Stack X, Y coordinates into (N, 2) array where N is the number of points
+        grid_points = np.column_stack((grid_x.ravel(), grid_y.ravel()))
 
-    import re
+        # Compute pairwise Euclidean distances
+        distance_matrix = cdist(grid_points, grid_points, metric='euclidean')
 
-    if re.match(r'\Agaspari(_|-)*cohn\Z', method, re.IGNORECASE):
-        print('Using Gaspari-Cohn function')
-        f = np.zeros(len(cutoff_radius))
-        for i in range(len(cutoff_radius)):
-            c = euclidean_distance
-            r = cutoff_radius[i]
-            if 0 <= abs(r) <= c:
-                f[i] = -1/4*(abs(r)/c)**5 + 1/2*(abs(r)/c)**4 + 5/8*(abs(r)/c)**3 - 5/3*(abs(r)/c)**2 + 1
-            elif c <= abs(r) <= 2*c:
-                f[i] = 1/12*(abs(r)/c)**5 - 1/2*(abs(r)/c)**4 + 5/8*(abs(r)/c)**3 + 5/3*(abs(r)/c)**2 - 5*(abs(r)/c) + 4 - 2/3*(abs(r)/c)**-1
-            elif abs(r) > 2*c:
-                f[i] = 0
-        # the localization matrix is a diagonal matrix
-        return np.diag(f)
-
-# --- Addaptive localization module ---
-def adaptive_localization(ensemble, forecast_cov ,euclidean_distance, cutoff_radius, method):
-    """
-    @description: This function performs adaptive localization on the forecast covariance matrix based
-                  on an adaptive radius and localization method.
-    Args:
-        ensemble: ndarray (n x N) - Ensemble matrix of model states (n: state size, N: ensemble size).
-        forecast_cov: ndarray (n x n) - Forecast covariance matrix.
-        euclidean_distance: ndarray (n x n) - Euclidean distance matrix.
-        cutoff_radius: float - Decorrelation radius.
-        method: str - Localization method ('Gauss', 'Cosine', 'Gaspari_Cohn', etc.).
-
-    Returns:
-        localized_cov: ndarray (n x n) - Localized covariance matrix.
-    """
-
-    localization_matrix = localization_matrix(euclidean_distance, cutoff_radius, method)
-
-    #  weighted covariance matrix
-    localized_cov = np.multiply(localization_matrix, forecast_cov)
-    return localized_cov
+        return distance_matrix
     
-# --- calculate localization coefficients ---
-def calculate_localization_coefficients(radius, distances, method='Gauss', verbose=False):
-    """
-    Calculate spatial decorrelation coefficients using a specified method.
-
-    Args:
-        radius (float): Decorrelation radius.
-        distances (array-like): Distances for coefficient calculation.
-        method (str): Localization method ('Gauss', 'Cosine', 'Gaspari_Cohn', etc.).
-        verbose (bool): If True, print warnings for zero radius.
-
-    Returns:
-        coefficients: Decorrelation coefficients, scalar if input is scalar.
-    """
-    # Define supported methods and check inputs
-    supported_methods = ['gauss', 'cosine', 'cosine_squared', 'gaspari_cohn', 'exp3', 'cubic', 'quadro', 'step']
-    if method.lower() not in supported_methods:
-        raise ValueError(f"Unsupported method '{method}'. Supported methods: {supported_methods}")
-
-    # Process distance inputs
-    is_scalar = np.isscalar(distances)
-    distances = np.atleast_1d(distances).astype(float)
-
-    # Return zeros for zero radius unless distances are also zero
-    if radius == 0:
-        if verbose: print("Radius is zero; assuming delta function at zero distance.")
-        coefficients = (distances == 0).astype(float)
-        return coefficients[0] if is_scalar else coefficients
-
-    # Calculate thresholds for non-zero radius
-    thresh_map = {
-        'gauss': radius, 'exp3': radius, 'cosine': radius * 2.3167,
-        'cosine_squared': radius * 3.2080, 'gaspari_cohn': radius * 1.7386,
-        'cubic': radius * 1.8676, 'quadro': radius * 1.7080
-    }
-    thresh = thresh_map.get(method.lower(), radius)
-
-    # Initialize coefficients based on methods
-    scaled_dist = distances / thresh
-    if method.lower() == 'gauss':
-        coefficients = np.exp(-0.5 * scaled_dist ** 2)
-    elif method.lower() == 'exp3':
-        coefficients = np.exp(-0.5 * scaled_dist ** 3)
-    elif method.lower() == 'cosine':
-        coefficients = np.where(distances <= thresh, (1 + np.cos(scaled_dist * np.pi)) / 2, 0)
-    elif method.lower() == 'cosine_squared':
-        coefficients = np.where(distances <= thresh, ((1 + np.cos(scaled_dist * np.pi)) / 2) ** 2, 0)
-    elif method.lower() == 'gaspari_cohn':
-        coefficients = np.where(distances <= thresh, 1 - scaled_dist ** 2 * (5 / 3 - scaled_dist ** 3 / 4), 0)
-    elif method.lower() == 'cubic':
-        coefficients = np.where(distances <= thresh, (1 - scaled_dist ** 3) ** 3, 0)
-    elif method.lower() == 'quadro':
-        coefficients = np.where(distances <= thresh, (1 - scaled_dist ** 4) ** 4, 0)
-    elif method.lower() == 'step':
-        coefficients = (distances < radius).astype(float)
-
-    return coefficients[0] if is_scalar else coefficients
-
+    def gaspari_cohn(self,r):
+        """
+        Compute the Gaspari-Cohn localization function.
         
+        Parameters:
+        r (numpy array): Normalized distance (d / r0), where d is the Euclidean distance 
+                        and r0 is the localization radius.
+        
+        Returns:
+        numpy array: Localization weights corresponding to r.
+        """
+        gc = np.zeros_like(r)  # Initialize localization weights
+
+        # Case 0 <= r < 1
+        mask1 = (r >= 0) & (r < 1)
+        gc[mask1] = (((-0.25 * r[mask1] + 0.5) * r[mask1] + 0.625) * r[mask1] - 5.0 / 3.0) * r[mask1]**2 + 1
+
+        # Case 1 <= r < 2
+        mask2 = (r >= 1) & (r < 2)
+        gc[mask2] = ((((1.0 / 12.0 * r[mask2] - 0.5) * r[mask2] + 0.625) * r[mask2] + 5.0 / 3.0) * r[mask2] - 5.0) * r[mask2] + 4.0 - 2.0 / (3.0 * np.where(r[mask2] == 0, 1e-10, r[mask2]))
+
+        # Case r >= 2 (default to 0)
+        return gc
+    
+    def create_tapering_matrix(self,grid_x, grid_y, localization_radius):
+        """
+        Create a tapering matrix using the Gaspari-Cohn localization function.
+
+        Parameters:
+        grid_x (numpy array): X-coordinates of grid points (1D array).
+        grid_y (numpy array): Y-coordinates of grid points (1D array).
+        localization_radius (float): Cutoff radius beyond which correlations are zero.
+
+        Returns:
+        numpy array: Tapering matrix (NxN), where N = number of grid points.
+        """
+        # Compute Euclidean distance matrix
+        distance_matrix = self.compute_euclidean_distance(grid_x, grid_y)
+
+        # Normalize distances by the localization radius
+        # if is radius is a scalar
+        if np.isscalar(localization_radius):
+            r = distance_matrix / localization_radius
+        else:
+            if localization_radius.shape[0] == distance_matrix.shape[0]:
+                r = distance_matrix / localization_radius[:, None]
+            elif localization_radius.shape[0] > distance_matrix.shape[0]:  
+                obs_indices = np.arange(distance_matrix.shape[0])  # Select only the required points
+                r = distance_matrix / localization_radius[obs_indices, None]
+
+        # Normalize distances by the localization radius
+        # r = distance_matrix / localization_radius
+
+        # Compute tapering matrix using Gaspari-Cohn function
+        tapering_matrix = self.gaspari_cohn(r)
+
+        return tapering_matrix
+
+    def compute_adaptive_localization_radius(self, grid_x, grid_y, base_radius=2.0, method='variance'):
+        """
+        Compute an adaptive localization radius for each grid point.
+
+        Parameters:
+        ensemble (numpy array): Ensemble state matrix (N_grid x N_ens).
+        grid_x (numpy array): X-coordinates of grid points (1D array).
+        grid_y (numpy array): Y-coordinates of grid points (1D array).
+        base_radius (float): Default radius before adaptation.
+        method (str): 'variance', 'observation_density', or 'correlation'.
+
+        Returns:
+        numpy array: Adaptive localization radius for each grid point.
+        """
+        num_points, Nens = self.ensemble.shape  # Get grid size and ensemble size
+        adaptive_radius = np.full(num_points, base_radius)  # Default radius
+
+        if method == 'variance':
+            # Compute ensemble variance at each grid point
+            ensemble_variance = np.var(self.ensemble, axis=1)
+
+            # Normalize variance (relative to max spread)
+            normalized_variance = ensemble_variance / np.max(ensemble_variance)
+
+            # Scale localization radius based on variance
+            adaptive_radius *= (1 + normalized_variance)
+
+        elif method == 'observation_density':
+            # Compute observation density (using a Gaussian kernel approach)
+            grid_points = np.column_stack((grid_x.ravel(), grid_y.ravel()))
+            obs_density = np.sum(np.exp(-cdist(grid_points, grid_points, 'euclidean')**2 / base_radius**2), axis=1)
+
+            # Normalize observation density
+            normalized_density = obs_density / np.max(obs_density)
+
+            # Decrease localization radius in high-density regions
+            adaptive_radius *= (1 - normalized_density)
+
+        elif method == 'correlation':
+            # Compute correlation matrix from the ensemble
+            correlation_matrix = np.corrcoef(self.ensemble, rowvar=True)
+
+            # Set radius where correlation drops below 1/sqrt(Nens-1)
+            threshold = 1 / np.sqrt(Nens - 1)
+            for i in range(num_points):
+                below_threshold = np.where(correlation_matrix[i, :] < threshold)[0]
+                if below_threshold.size > 0:
+                    adaptive_radius[i] = base_radius * np.min(below_threshold) / num_points  # Scale adaptively
+
+        else:
+            raise ValueError("Invalid method. Choose 'variance', 'observation_density', or 'correlation'.")
+
+        return adaptive_radius
+
+
+  

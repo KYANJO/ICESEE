@@ -71,7 +71,7 @@ class EnsembleKalmanFilter:
                                              Q_err, self.parameters, **model_kwags)
             return ensemble
 
-        # Parallel forecast step using MPI
+        # Using divide and conquer parallelization with MPI for non-MPI application in forecast_step_single
         elif re.match(r"\AMPI\Z", self.parallel_flag, re.IGNORECASE):
             from mpi4py import MPI
 
@@ -104,6 +104,36 @@ class EnsembleKalmanFilter:
                 ensemble = np.hstack(gathered_ensemble)
 
             return ensemble
+        
+        # Using MPI split communicator for MPI application in forecast_step_single
+        elif re.match(r"\AMPI_split\Z", self.parallel_flag, re.IGNORECASE):
+            from mpi4py import MPI
+
+            # Initialize MPI
+            comm = MPI.COMM_WORLD
+
+            # Get global rank and size
+            global_rank = comm.Get_rank()
+            global_size = comm.Get_size()
+
+            # Get the number of ensemble members
+            nd, Nens = ensemble.shape
+
+            # Split communicator into groups
+            color = 0 if global_rank < global_size // 2 else 1
+            
+            # Split the communicator based on color
+            sub_comm = comm.Split(color=color, key=global_rank)
+
+            # Get the rank and size of the new communicator
+            sub_rank = sub_comm.Get_rank()
+            sub_size = sub_comm.Get_size()
+            
+
+
+            # cleanup
+            sub_comm.Free()
+
 
 
         # Parallel forecast step using Dask

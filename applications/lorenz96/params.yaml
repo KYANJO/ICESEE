@@ -32,6 +32,7 @@ enkf-parameters:
 
   seed: 1                 # seed for random number generator
   inflation_factor: 1.0          # inflation factor
+  localization_flag: False      # localization flag: True, False
 
   # enkf model parameters
   model_name: "lorenz96"         # name of the model
