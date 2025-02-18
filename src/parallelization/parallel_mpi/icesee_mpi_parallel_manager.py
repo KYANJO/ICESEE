@@ -449,28 +449,29 @@ def icesee_mpi_parallelization(Nens, global_shape=1024, n_modeltasks=None, scree
     parallel_manager.node_comm = COMM_WORLD.Split_type(MPI.COMM_TYPE_SHARED)
 
     # allocate shared memory
-    parallel_manager.win = MPI.Win.Allocate_shared(
-         parallel_manager.mem_size * disp_unit if parallel_manager.node_comm.rank == 0 else 0,
-        disp_unit, 
-        comm = parallel_manager.node_comm)
-    
-    # querying shared memory buffer
-    parallel_manager.mem_buf, itemsize = parallel_manager.win.Shared_query(0)
-    assert itemsize == MPI.DOUBLE.Get_size()
+    if False:
+        parallel_manager.win = MPI.Win.Allocate_shared(
+            parallel_manager.mem_size * disp_unit if parallel_manager.node_comm.rank == 0 else 0,
+            disp_unit, 
+            comm = parallel_manager.node_comm)
+        
+        # querying shared memory buffer
+        parallel_manager.mem_buf, itemsize = parallel_manager.win.Shared_query(0)
+        assert itemsize == MPI.DOUBLE.Get_size()
 
-    # convert the memory buffer to a numpy array
-    parallel_manager.mem_buf = np.array(parallel_manager.mem_buf, dtype='B', copy=False)
+        # convert the memory buffer to a numpy array
+        parallel_manager.mem_buf = np.array(parallel_manager.mem_buf, dtype='B', copy=False)
 
-    # create a shared array
-    # parallel_manager.shared_array = np.ndarray(buffer=parallel_manager.mem_buf, dtype='d', shape=( parallel_manager.mem_size,))
-    parallel_manager.shared_array = np.ndarray(buffer=parallel_manager.mem_buf, dtype='d', shape=(global_shape, Nens))
+        # create a shared array
+        # parallel_manager.shared_array = np.ndarray(buffer=parallel_manager.mem_buf, dtype='d', shape=( parallel_manager.mem_size,))
+        parallel_manager.shared_array = np.ndarray(buffer=parallel_manager.mem_buf, dtype='d', shape=(global_shape, Nens))
 
-    parallel_manager.node_rank = parallel_manager.node_comm.Get_rank()
-    parallel_manager.node_size = parallel_manager.node_comm.Get_size()
+        parallel_manager.node_rank = parallel_manager.node_comm.Get_rank()
+        parallel_manager.node_size = parallel_manager.node_comm.Get_size()
 
-    # perform ensemble analysis step using shared memory
-    parallel_manager.local_start = parallel_manager.node_comm.rank * (Nens // parallel_manager.node_comm.size)
-    parallel_manager.local_stop = (parallel_manager.node_comm.rank + 1) * (Nens // parallel_manager.node_comm.size)
+        # perform ensemble analysis step using shared memory
+        parallel_manager.local_start = parallel_manager.node_comm.rank * (Nens // parallel_manager.node_comm.size)
+        parallel_manager.local_stop = (parallel_manager.node_comm.rank + 1) * (Nens // parallel_manager.node_comm.size)
 
     # Display MPI ICESEE Configuration
     if screen_output:
@@ -485,7 +486,7 @@ def display_pe_configuration(parallel_manager):
     Uses tabulate for better readability.
     """
     from tabulate import tabulate
-    
+
     COMM_WORLD = MPI.COMM_WORLD
     rank = parallel_manager.rank_world
 

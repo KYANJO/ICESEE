@@ -91,12 +91,19 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
         Nens = params["Nens"]
         n_modeltasks = params["n_modeltasks"]
         parallel_manager = icesee_mpi_parallelization(Nens=Nens, n_modeltasks=n_modeltasks, screen_output=0)
-        comm = parallel_manager.COMM_model
-        rank = parallel_manager.rank_model
-        size = parallel_manager.size_model
+        # --- model communicators ---
+        comm_model = parallel_manager.COMM_model
+        rank_model = parallel_manager.rank_model
+        size_model = parallel_manager.size_model
         # print(f"Rank: {rank}")
         # load balancing
-        ensemble_local,start,stop = parallel_manager.load_balancing(ensemble_vec,comm)
+        ensemble_local,start_model,stop_model = parallel_manager.load_balancing(ensemble_vec,comm_model)
+
+        # --- filter communicator ---
+        comm_filter = parallel_manager.COMM_filter
+        rank_filter = parallel_manager.rank_filter
+        size_filter = parallel_manager.size_filter
+        
         
     else:
         parallel_manager = None
@@ -125,17 +132,17 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
             if True:
                 
                 # --- gather local ensembles from all processors ---
-                gathered_ensemble = parallel_manager.all_gather_data(comm, ensemble_local)
-                if rank == 0:
+                gathered_ensemble = parallel_manager.all_gather_data(comm_model, ensemble_local)
+                if rank_model == 0:
                     ensemble_vec = np.hstack(gathered_ensemble)
                 else:
                     ensemble_vec = np.empty((nd, Nens), dtype=np.float64)
 
                 # --- broadcast the ensemble to all processors ---
-                ensemble_vec = parallel_manager.broadcast_data(comm, ensemble_vec, root=0)
+                ensemble_vec = parallel_manager.broadcast_data(comm_model, ensemble_vec, root=0)
 
                 # compute the global ensemble mean
-                ensemble_vec_mean[:,k+1] = parallel_manager.compute_mean(ensemble_local, comm)
+                ensemble_vec_mean[:,k+1] = parallel_manager.compute_mean(ensemble_local, comm_filter)
 
                 # Analysis step
                 obs_index = model_kwargs["obs_index"]
@@ -146,10 +153,10 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                     if EnKF_flag or DEnKF_flag:
                         local_cov = local_ensemble_centered @ local_ensemble_centered.T / (Nens - 1)
                         Cov_model = np.zeros_like(local_cov)
-                        comm.Allreduce([local_cov, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
+                        comm_filter.Allreduce([local_cov, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
                     elif EnRSKF_flag or EnTKF_flag:
                         Cov_model = np.zeros_like(local_ensemble_centered)
-                        comm.Allreduce([local_ensemble_centered, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
+                        comm_filter.Allreduce([local_ensemble_centered, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
 
                     # method 3
                     if params["localization_flag"]:
@@ -217,8 +224,8 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
 
                     # print(f"Rank: {rank}, Time taken for analysis step: {mpi_stop - mpi_start}")
                     # get total time taken for the analysis step
-                    total_time = comm.reduce(mpi_stop - mpi_start, op=MPI.SUM, root=0)
-                    if rank == 0:
+                    total_time = comm_filter.reduce(mpi_stop - mpi_start, op=MPI.SUM, root=0)
+                    if rank_filter == 0:
                         print(f"Total time taken for analysis step: {total_time}")
 
 
@@ -230,7 +237,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                     # ensemble_vec = UtilsFunctions(params, ensemble_vec)._inflate_ensemble()
                 
                     # update the local ensemble
-                    ensemble_local = copy.deepcopy(ensemble_vec[:,start:stop])
+                    ensemble_local = copy.deepcopy(ensemble_vec[:,start_model:stop_model])
                     
                     # update ensemble
 
