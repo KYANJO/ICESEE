@@ -8,7 +8,6 @@
 
 from mpi4py import MPI
 import numpy as np
-from tabulate import tabulate
 import math
 import copy
 
@@ -485,7 +484,8 @@ def display_pe_configuration(parallel_manager):
     Displays MPI parallel configuration in a structured format.
     Uses tabulate for better readability.
     """
-
+    from tabulate import tabulate
+    
     COMM_WORLD = MPI.COMM_WORLD
     rank = parallel_manager.rank_world
 
