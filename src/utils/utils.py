@@ -107,7 +107,7 @@ class UtilsFunctions:
         # Find indices of observation times in the original array
         obs_idx = np.array([np.where(t == time)[0][0] for time in obs_t if time in t]).astype(int)
 
-        print(f"Number of observation instants: {len(obs_idx)} at times: {t[obs_idx]}")
+        # print(f"Number of observation instants: {len(obs_idx)} at times: {t[obs_idx]}")
         
         # number of observation instants
         num_observations = len(obs_idx)

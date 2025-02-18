@@ -355,7 +355,7 @@ class EnsembleKalmanFilter:
         analysis_error_cov =(1/(Nens-1)) * difference @ difference.T
 
         # Debug
-        print(f"[Debug] max of analysis error covariance: {np.max(analysis_error_cov[567:,567:])}")
+        # print(f"[Debug] max of analysis error covariance: {np.max(analysis_error_cov[567:,567:])}")
 
         return ensemble_analysis, analysis_error_cov
        

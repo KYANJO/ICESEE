@@ -215,7 +215,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
 
                     mpi_stop = MPI.Wtime()
 
-                    print(f"Rank: {rank}, Time taken for analysis step: {mpi_stop - mpi_start}")
+                    # print(f"Rank: {rank}, Time taken for analysis step: {mpi_stop - mpi_start}")
                     # get total time taken for the analysis step
                     total_time = comm.reduce(mpi_stop - mpi_start, op=MPI.SUM, root=0)
                     if rank == 0:

@@ -145,7 +145,7 @@ class ParallelManager:
         # ensemble_local = np.zeros((global_shape, stop-start))
         ensemble_local = ensemble[:global_shape,start:stop]
         # for memory issues return a deepcopy of the ensemble_local
-        return copy.deepcopy(ensemble_local)
+        return copy.deepcopy(ensemble_local), start, stop
     
     # --- memory formulation ---
     def memory_usage(self, global_shape, Nens, bytes_per_element=8):
@@ -345,8 +345,8 @@ def icesee_mpi_parallelization(Nens, global_shape=1024, n_modeltasks=None, scree
             # raise ValueError(f"Number of MPI processes ({parallel_manager.size_world}) must be divisible by the number of ensemble members ({Nens})")
 
     # Display initialization message
-    if parallel_manager.rank_world == 0:
-        print("\n [ICESEE] Initializing communicators...\n")
+    # if parallel_manager.rank_world == 0:
+    #     print("\n [ICESEE] Initializing communicators...\n")
 
     # --- Determine `n_modeltasks` dynamically if not provided ---
     if n_modeltasks is None:
@@ -385,7 +385,7 @@ def icesee_mpi_parallelization(Nens, global_shape=1024, n_modeltasks=None, scree
 
     # --- Print Optimization Choice ---
     if parallel_manager.rank_world == 0:
-        print(f"\n [ICESEE] Optimized Model Tasks: {parallel_manager.n_modeltasks} "
+        print(f"[ICESEE] Optimized Model Tasks: {parallel_manager.n_modeltasks} "
               f"(for {parallel_manager.size_world} MPI ranks, {Nens} ensembles)")
 
     # Generate communicator for ensemble tasks

@@ -109,7 +109,7 @@ kwargs = {"a":a, "h0":h0, "u0":u0, "C":C, "A":A,"Q":Q,"V":V, "da":float(modeling
 
 
 obs_t, obs_idx, num_observations = UtilsFunctions(params).generate_observation_schedule(**kwargs)
-print(obs_t)
+# print(obs_t)
 kwargs["obs_index"] = obs_idx
 params["number_obs_instants"] = num_observations
 

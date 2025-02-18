@@ -36,13 +36,14 @@ utils_dir = os.path.join(project_root, 'src', 'utils')
 run_model_da_dir = os.path.join(project_root, 'src', 'run_model_da')
 config_loader_dir = os.path.join(project_root, 'config')
 applications_dir = os.path.join(project_root, 'applications')
+parallelization_dir = os.path.join(project_root, 'src', 'parallelization')
 
 # Insert the models directory at the beginning of sys.path
 sys.path.insert(0, models_dir)
 sys.path.insert(0, utils_dir)
 sys.path.insert(0, run_model_da_dir)
 sys.path.insert(0, config_loader_dir)
-
+sys.path.insert(0, parallelization_dir)
 
 # import the necessary modules
 from tools import save_arrays_to_h5, extract_datasets_from_h5, save_all_data
