@@ -345,6 +345,7 @@ class UtilsFunctions:
                 forward_ens = self.ensemble
 
                 # get initial sample correlation btn the shuffled and forward ens
+                # sample_ind
                 # sample_correlations = self.compute_sample_correlations_vectorized(shuffled_ens, forward_ens)
                 sample_correlations = np.corrcoef(ensemble_init, forward_ens, rowvar=False)
                 
@@ -563,5 +564,63 @@ class UtilsFunctions:
 
         return adaptive_radius
 
+    def compute_smb_mask(self,  k, km,  state_block_size, hu_obs=None, smb_init=None, smb_clim=None, model_kwargs=None):
+        """
+        Compute a robust SMB mask based on observations (if available) or ensemble statistics.
+        
+        Parameters:
+        - statevec_ens: np.array, current state ensemble
+        - state_block_size: int, starting index for SMB-related states
+        - hu_obs: np.array or None, observed SMB values (optional)
+        - smb_init: np.array, initial SMB state
+        - smb_clim: np.array or None, climatological SMB values (optional)
+        - model_kwargs: dict, model parameters containing time `t`
+        - params: dict, additional model parameters (e.g., `nt`)
 
-  
+        Returns:
+        - Updated `statevec_ens` with a robust SMB mask applied.
+        """
+        statevec_ens = self.ensemble
+        params = self.params
+
+        # Define the SMB state
+        smb = statevec_ens[state_block_size:, :]
+
+        # Time information
+        t = model_kwargs["t"]
+        nt = params["nt"]
+        time_factor = np.clip(t[k] / (t[nt - 1] - t[0]), 0, 1)  # Prevent division by zero
+
+        # If SMB observations exist, use them to set a dynamic threshold
+        # if hu_obs is not None:
+        if np.max(hu_obs[state_block_size:, km]) > 0:
+            smb_crit = np.percentile(hu_obs[state_block_size:, km], 95, axis=0) * 1.25
+        # elif smb_clim is not None:
+        elif np.max(smb_clim) > 0:
+            # If climatological data exists, use it as a reference
+            smb_crit = smb_clim + np.std(smb, axis=1)
+        else:
+            # Default to ensemble statistics if no observations or climatology
+            smb_mean = np.mean(smb, axis=1)
+            smb_std = np.std(smb, axis=1)
+            smb_crit = smb_mean + 2.0 * smb_std
+
+        # Compute lower and upper bounds
+        smb_crit_upper = smb_crit
+        smb_crit_lower = smb_crit * 0.8  # Allow some variability
+
+        # Logical mask for significant deviations
+        smb_flag = np.any((smb > smb_crit_upper) | (smb < smb_crit_lower), axis=1)
+
+        if np.any(smb_flag):  # If any deviations exist
+            alpha = 0.05  # Smoothing factor
+            correction_factor = (1 - np.exp(-alpha * time_factor))
+
+            # Apply smooth correction
+            statevec_ens[state_block_size:, :] = smb_init + (smb - smb_init) * correction_factor
+
+        return statevec_ens
+
+
+
+    

@@ -8,10 +8,11 @@
 import sys
 import os
 import numpy as np
+import re
 from scipy.stats import multivariate_normal,norm
 
 # --- import run_simulation function from the available examples ---
-from synthetic_ice_stream.icepack_model import *
+from synthetic_ice_stream._icepack_model import *
 
 # --- Forecast step ---
 def forecast_step_single(ens=None, ensemble=None, nd=None, Q_err=None, params=None, **kwargs):
@@ -20,16 +21,19 @@ def forecast_step_single(ens=None, ensemble=None, nd=None, Q_err=None, params=No
                  of the velocity field
     Returns: ensemble: updated ensemble member
     """
+    # get the dimension of the state variables
+    hdim = nd // (params["num_state_vars"] + params["num_param_vars"])
+    state_block_size = hdim*params["num_state_vars"]
+
 
     #  call the run_model fun to push the state forward in time
     ensemble[:,ens] = run_model(ens, ensemble, nd, params, **kwargs)
 
     # add noise to the state variables
-    # noise = multivariate_normal.rvs(mean=np.zeros(nd), cov=Q_err)
-    noise = np.random.multivariate_normal(np.zeros(nd), Q_err)
+    noise = np.random.multivariate_normal(np.zeros(state_block_size), Q_err)
 
     # update the ensemble with the noise
-    ensemble[:,ens] = ensemble[:,ens] + noise
+    ensemble[:state_block_size,ens] = ensemble[:state_block_size,ens] + noise
 
     return ensemble[:,ens]
 
@@ -198,16 +202,20 @@ def generate_nurged_state(statevec_nurged=None,params=None,**kwargs):
     tnur = np.linspace(.1, 2, nt)
     # intialize the accumulation rate if joint estimation is enabled at the initial time step
     if kwargs["joint_estimation"]:
-        aa   = a_in_p*(np.sin(tnur[0]) + 1)
-        daa  = da_p*(np.sin(tnur[0]) + 1)
+        # aa   = a_in_p*(np.sin(tnur[0]) + 1)
+        # daa  = da_p*(np.sin(tnur[0]) + 1)
+        aa = a_in_p
+        daa = da_p
         a_in = firedrake.Constant(aa)
         da_  = firedrake.Constant(daa)
         a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
         statevec_nurged[3*hdim:,0] = a.dat.data_ro
 
     for k in tqdm.trange(nt):
-        aa   = a_in_p*(np.sin(tnur[k]) + 1)
-        daa  = da_p*(np.sin(tnur[k]) + 1)
+        # aa   = a_in_p*(np.sin(tnur[k]) + 1)
+        # daa  = da_p*(np.sin(tnur[k]) + 1)
+        aa = a_in_p
+        daa = da_p
         a_in = firedrake.Constant(aa)
         da_  = firedrake.Constant(daa)
         a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
@@ -260,6 +268,7 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
     for i in range(N):
         # intial thickness perturbed by bump
         # h_bump = np.random.uniform(-h_nurge_ic,0,h_indx)
+        # h_bump = np.random.normal(-h_nurge_ic,0.1,h_indx)
         h_bump = np.linspace(-h_nurge_ic,0,h_indx)
         # h_with_bump = h_bump + h_perturbed[:h_indx]
         # h_perturbed = np.concatenate((h_with_bump, h_perturbed[h_indx:]))
@@ -275,7 +284,14 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
 
         # initilize the accumulation rate if joint estimation is enabled
         if kwargs["joint_estimation"]:
-            statevec_ens[3*hdim:,i] = statevec_nurged[3*hdim:,0]
+            # add some spread to the intial accumulation rate
+            initial_smb = statevec_nurged[3*hdim:,0]
+            # create a normal distribution spread for the accumulation rate
+            spread = np.random.normal(0, 0.08, initial_smb.shape)
+            # print(f"[Debug]: spread and initail_smb shapes: {spread.shape}, {initial_smb.shape}")
+            statevec_ens[3*hdim:,i] = initial_smb + spread
+
+            # statevec_ens[3*hdim:,i] = statevec_nurged[3*hdim:,0]
 
     statevec_ens_full[:,:,0] = statevec_ens
 
