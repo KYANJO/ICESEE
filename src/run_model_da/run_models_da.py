@@ -211,18 +211,18 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
 
                         # rho = np.zeros_like(Cov_model)
                         rho = np.ones_like(Cov_model)
-                        for j in range(Cov_model.shape[0]):
-                            for i in range(Cov_model.shape[1]):
-                                rad_x = np.abs(X[j] - X[i])
-                                rad_y = np.abs(Y[j] - Y[i])
-                                # rad_x = np.abs(grid_x[j] - grid_x[i])
-                                # rad_y = np.abs(grid_y[j] - grid_y[i])
-                                rad = np.sqrt(rad_x**2 + rad_y**2)
-                                # print(f"Rad: {rad}")
-                                # rad = np.array([rad/cutoff_distance])[0]
-                                rad = rad/cutoff_distance
-                                print(f"Rad: {rad}")
-                                rho[j,i] = gaspari_cohn(rad)
+                        # for j in range(Cov_model.shape[0]):
+                        #     for i in range(Cov_model.shape[1]):
+                        #         rad_x = np.abs(X[j] - X[i])
+                        #         rad_y = np.abs(Y[j] - Y[i])
+                        #         # rad_x = np.abs(grid_x[j] - grid_x[i])
+                        #         # rad_y = np.abs(grid_y[j] - grid_y[i])
+                        #         rad = np.sqrt(rad_x**2 + rad_y**2)
+                        #         # print(f"Rad: {rad}")
+                        #         # rad = np.array([rad/cutoff_distance])[0]
+                        #         rad = rad/cutoff_distance
+                        #         print(f"Rad: {rad}")
+                        #         rho[j,i] = gaspari_cohn(rad)
 
                         # Cov_model = np.multiply(Cov_model, rho)
                         Cov_model = rho * Cov_model
