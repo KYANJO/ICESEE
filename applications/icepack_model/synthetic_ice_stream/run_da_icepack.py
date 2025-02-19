@@ -225,6 +225,7 @@ statevec_ens_full, statevec_ens_mean, statevec_bg = run_model_with_filter(
 
 
 # load data to be written to file
+comm.Barrier()
 if rank == 0:
     PETSc.Sys.Print("Saving data ...")
     save_all_data(
@@ -247,4 +248,5 @@ if rank == 0:
         statevec_bg=statevec_bg
     )
 else:
-    pass
+    None
+

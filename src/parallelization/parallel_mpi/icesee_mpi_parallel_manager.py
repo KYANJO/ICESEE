@@ -101,7 +101,7 @@ class ParallelManager:
         return self
 
     # --- Parallel load distribution ---
-    def load_balancing(self, ensemble,comm):
+    def ensembles_load_distribution(self, ensemble,comm):
         """
         Distributes ensemble members among MPI processes based on rank and size."""
 
@@ -145,6 +145,46 @@ class ParallelManager:
         ensemble_local = ensemble[:global_shape,start:stop]
         # for memory issues return a deepcopy of the ensemble_local
         return copy.deepcopy(ensemble_local), start, stop
+    
+    # --- state vector load distribution ---
+    def state_vector_load_distribution(self, state_vector,comm):
+        """
+        Distributes state vector among MPI processes based on rank and size."""
+
+        global_shape, Nens = state_vector.shape
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+
+        # --- Properly Distribute Tasks for All Cases ---
+        if global_shape > self.size_world:
+           workloads = [global_shape // size for i in range(size)]
+           for i in range(global_shape % size):
+               workloads[i] += 1
+           start = 0
+           for i in range(rank):
+               start += workloads[i]
+           stop = start + workloads[rank]
+        else:
+            # Case 2: More processes than state variables → Assign at most one task per rank
+            if rank < global_shape:
+                start, stop = rank, rank + 1
+            else:
+                # Extra ranks do nothing
+                start, stop = 0, 0
+                
+        if False:
+            chuck_size = global_shape // size
+            remainder = global_shape % size
+            if rank < remainder:
+                start = rank * (chuck_size + 1)
+                stop = start + (chuck_size + 1)
+            else:
+                start = rank * chuck_size + remainder
+                stop = start + chuck_size
+        
+        state_vector_local = copy.deepcopy(state_vector[start:stop,:])
+        
+        return state_vector_local, start, stop
     
     # --- memory formulation ---
     def memory_usage(self, global_shape, Nens, bytes_per_element=8):
