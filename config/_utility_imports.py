@@ -71,6 +71,10 @@ parser.add_argument('execution_mode', type=int, choices=[0, 1, 2], nargs='?', he
 
 args = parser.parse_args()
 
+# Set verbose variable (default is False unless overridden)
+verbose = args.verbose
+locals().update(args.__dict__)
+
 # Determine execution mode
 selected_mode = "default_run"  # Default mode
 
@@ -86,6 +90,9 @@ else:
 args.default_run = (selected_mode == "default_run")
 args.sequential_run = (selected_mode == "sequential_run")
 args.even_distribution = (selected_mode == "even_distribution")
+
+# Explicit use of parameters
+Nens = int(args.Nens)
 
 # Create params dictionary
 params = {
@@ -105,3 +112,25 @@ parameters = load_yaml_to_dict(parameters_file)
 physical_params = get_section(parameters, "physical-parameters")
 modeling_params = get_section(parameters, "modeling-parameters")
 enkf_params = get_section(parameters, "enkf-parameters")
+
+# --- Ensemble Parameters ---
+params.update({
+    "nt": int(float(modeling_params["num_years"])) * int(float(modeling_params["timesteps_per_year"])),
+    "dt": 1.0 / float(modeling_params["timesteps_per_year"]),
+    "num_state_vars": int(float(enkf_params.get("num_state_vars", 1))),
+    "num_param_vars": int(float(enkf_params.get("num_param_vars", 0))),
+    "number_obs_instants": int(int(float(enkf_params.get("obs_max_time", 1))) / float(enkf_params.get("freq_obs", 1))),
+    "inflation_factor": float(enkf_params.get("inflation_factor", 1.0)),
+    "sig_model": float(enkf_params.get("sig_model", 0.01)),
+    "sig_obs": float(enkf_params.get("sig_obs", 0.01)),
+    "sig_Q": float(enkf_params.get("sig_Q", 0.01)),
+    "freq_obs": float(enkf_params.get("freq_obs", 1)),
+    "obs_max_time": int(float(enkf_params.get("obs_max_time", 1))),
+    "obs_start_time": float(enkf_params.get("obs_start_time", 1)),
+    "localization_flag": bool(enkf_params.get("localization_flag", False)),
+    "parallel_flag": enkf_params.get("parallel_flag", "serial"),
+    "n_modeltasks": int(enkf_params.get("n_modeltasks", 1))
+})
+
+# update for time t
+params["t"] = np.linspace(0, int(float(modeling_params["num_years"])), params["nt"] + 1)
