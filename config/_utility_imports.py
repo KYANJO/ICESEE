@@ -1,7 +1,7 @@
 # =============================================================================
 # @author: Brian Kyanjo
 # @date: 2025-01-13
-# @description: Lorenz96 model with data assimilation
+# @description: ICESEE model applications utility imports
 # =============================================================================
 
 # --- Imports ---
