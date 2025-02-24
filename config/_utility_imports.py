@@ -134,3 +134,20 @@ params.update({
 
 # update for time t
 params["t"] = np.linspace(0, int(float(modeling_params["num_years"])), params["nt"] + 1)
+params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
+
+# model kwargs
+kwargs = {
+    "t": params["t"],
+    "obs_index": (np.linspace(int(params["freq_obs"]/params["dt"]), \
+                        int(params["obs_max_time"]/params["dt"]), int(params["number_obs_instants"]))).astype(int),
+    "joint_estimation": bool(enkf_params.get("joint_estimation", False)),
+    "parameter_estimation": bool(enkf_params.get("parameter_estimation", False)),
+    "state_estimation": bool(enkf_params.get("state_estimation", False)),
+}
+
+# --- Observations Parameters ---
+obs_t, obs_idx, num_observations = UtilsFunctions(params).generate_observation_schedule(**kwargs)
+# print(obs_t)
+kwargs["obs_index"] = obs_idx
+params["number_obs_instants"] = num_observations
