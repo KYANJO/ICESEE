@@ -149,9 +149,13 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
         # ensemble_vec_local, start_vec, stop_vec = parallel_manager.state_vector_load_distribution(ensemble_vec, comm_filter)
 
         # --- icesee mpi parallel manager ---------------------------------------------------
+        # --- ensemble load distribution ---
         rounds, color, sub_rank, sub_size, subcomm, subcomm_size, rank_world, size_world, comm_world, start, stop = ParallelManager().icesee_mpi_ens_distribution(params)
         if params["even_distribution"]:
             ensemble_local = copy.deepcopy(ensemble_vec[:,start:stop])
+
+        # --- row vector load distribution ---   
+        # local_rows, start_row, end_row = ParallelManager().icesee_mpi_row_distribution(ensemble_vec, params)
 
         parallel_manager = None # debugging flag for now
         
@@ -289,7 +293,8 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                     # inflate the ensemble
                     ens_T = UtilsFunctions(params, ens_T[:nd,:]).inflate_ensemble(in_place=True)
                             
-                    ensemble_vec = copy.deepcopy(ens_T[:nd,:])
+                    # ensemble_vec = copy.deepcopy(ens_T[:nd,:])
+                    ensemble_vec = ens_T[:,:]
             
                 # save the ensemble
                 ensemble_vec_full[:,:,k+1] = ensemble_vec[:nd,:]
@@ -372,16 +377,201 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                     # Gather results from all subcomms
                     gathered_ensemble_global = comm_world.allgather(gathered_ensemble)
 
+                    # gather all observations
+                    # hu_obs = comm_world.allgather(hu_obs)
+
                 if rank_world == 0:
                     if size_world > Nens:
                         # print(f"Ensemble shape: {[arr.shape for arr in gathered_ensemble_global]}")
                         ensemble_vec = [arr for arr in gathered_ensemble_global if isinstance(arr, np.ndarray)]
+                        hu_obs = [arr for arr in hu_obs if isinstance(arr, np.ndarray)]
                     else:
                         ensemble_vec = [arr for sublist in gathered_ensemble_global for arr in sublist if arr is not None]
-                    
+                        hu_obs = [arr for sublist in hu_obs for arr in sublist if arr is not None]
                     ensemble_vec = np.column_stack(ensemble_vec)
-                    # print(f"Ensemble shape: {ensemble_vec.shape}")
-                exit()
+                    # print(f"hu_obs type: {[ arr.shape for arr in hu_obs]}")
+                    # hu_obs = np.hstack(hu_obs)
+                    
+                    shape_ens = np.array(ensemble_vec.shape, dtype=np.int32) # send shape info
+                    if True:
+                        # calculate the ensemble mean
+                        # ensemble_vec_mean[:,k+1] = np.mean(ensemble_vec, axis=1)
+                        obs_index = model_kwargs["obs_index"]
+                        if (km < params["number_obs_instants"]) and (k+1 == obs_index[km]):
+                            if EnKF_flag or DEnKF_flag:
+                                diff = ensemble_vec - np.mean(ensemble_vec, axis=1).reshape(-1,1)
+                                Cov_model = diff @ diff.T / (Nens - 1)
+                            
+                            # print(f"Rank: {rank_world} hu_obs shape: {hu_obs.shape}")
+                            # print(f"Rank: {rank_world} hu_obs type: {type(hu_obs)}")
+                            hu_obs = np.array(hu_obs)
+                            print(f"Rank: {rank_world} hu_obs shape: {hu_obs.shape}")
+                            analysis  = EnKF(Observation_vec=  UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km]), 
+                                            Cov_obs=params["sig_obs"][k+1]**2 * np.eye(2*params["number_obs_instants"]+1), \
+                                            Cov_model= Cov_model, \
+                                            Observation_function=UtilsFunctions(params, ensemble_vec).Obs_fun, \
+                                            Obs_Jacobian=UtilsFunctions(params, ensemble_vec).JObs_fun, \
+                                            parameters=  params,\
+                                            parallel_flag=   parallel_flag)
+                            # compute the analysis ensemble
+                            if EnKF_flag:
+                                ensemble_vec, Cov_model = analysis.EnKF_Analysis(ensemble_vec)
+                            
+                            # inflate the ensemble
+                            ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
+
+                else:
+                    shape_ens = np.empty(2, dtype=np.int32)
+
+                # Step 1: Broadcast the shape to all processors
+                comm_world.Bcast([shape_ens, MPI.INT], root=0)
+
+                if rank_world != 0:
+                    ensemble_vec = np.empty(shape_ens, dtype=np.float64)
+
+                # broadcast the ensemble to all processors
+                comm_world.Bcast([ensemble_vec, MPI.DOUBLE], root=0)
+
+                # ensemble_vec= ensemble_vec[:nd,:] #TODO: this is a temporary fix
+
+                # Step 2: Compute row-wise distribution (only needed on Rank 0)
+                if False:
+                    num_rows, num_cols = shape_ens
+                    rows_per_rank = num_rows // size_world
+                    extra = num_rows % size_world
+
+                    if rank_world == 0:
+                        send_counts = [(rows_per_rank + 1) * num_cols if rank < extra else rows_per_rank * num_cols for rank in range(size_world)]
+                        displacements = [sum(send_counts[:rank]) for rank in range(size_world)]
+                    else:
+                        send_counts = None
+                        displacements = None
+
+                    # Step 3: Allocate space for local chunk
+                    local_rows = rows_per_rank + 1 if rank_world < extra else rows_per_rank
+                    local_ensemble = np.zeros((local_rows, num_cols), dtype=np.float64)
+
+                    # Step 4: Scatter data row-wise
+                    comm_world.Scatterv([ensemble_vec, send_counts, displacements, MPI.DOUBLE], local_ensemble, root=0)
+                    # print(f"Rank {rank_world}: Received shape {local_ensemble.shape}")
+
+                    # Step 5: Compute the local ensemble mean
+                    ensemble_vec_mean_local = np.mean(local_ensemble, axis=1)
+
+                    # Analysis step
+                    obs_index = model_kwargs["obs_index"]
+                    if (km < params["number_obs_instants"]) and (k+1 == obs_index[km]):
+                        # --- compute covariance matrix based on the EnKF type ---
+                        diff = local_ensemble -  ensemble_vec_mean_local.reshape(-1,1)
+                        if EnKF_flag or DEnKF_flag:
+                            Cov_model = diff @ diff.T / (Nens - 1)
+                        elif EnRSKF_flag or EnTKF_flag:
+                            Cov_model = diff / (Nens - 1)
+
+                        #  --- localization
+                        if params.get("localization_flag", False):
+                            # try with the localization matrix
+                            cutoff_distance = 6000
+
+                            # rho = np.zeros_like(Cov_model)
+                            rho = np.ones_like(Cov_model)
+                            # for j in range(Cov_model.shape[0]):
+                            #     for i in range(Cov_model.shape[1]):
+                            #         rad_x = np.abs(X[j] - X[i])
+                            #         rad_y = np.abs(Y[j] - Y[i])
+                            #         rad = np.sqrt(rad_x**2 + rad_y**2)
+                            #         rad = rad/cutoff_distance
+                            #         rho[j,i] = gaspari_cohn(rad)
+
+                            Cov_model = rho * Cov_model
+                        # analysis step
+                        shape_a = local_ensemble.shape[0]
+                        analysis = EnKF(Observation_vec=  UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:shape_a,km]), 
+                                        Cov_obs=params["sig_obs"][k+1]**2 * np.eye(2*params["number_obs_instants"]+1), \
+                                        Cov_model= Cov_model, \
+                                        Observation_function=UtilsFunctions(params, ensemble_vec).Obs_fun, \
+                                        Obs_Jacobian=UtilsFunctions(params, ensemble_vec).JObs_fun, \
+                                        parameters=  params,\
+                                        parallel_flag=   parallel_flag)
+                        
+                        # compute the analysis ensemble
+                        if EnKF_flag:
+                            local_ensemble, Cov_model = analysis.EnKF_Analysis(local_ensemble)
+                        elif DEnKF_flag:
+                            local_ensemble, Cov_model = analysis.DEnKF_Analysis(local_ensemble)
+                        elif EnRSKF_flag:
+                            local_ensemble, Cov_model = analysis.EnRSKF_Analysis(local_ensemble)
+                        elif EnTKF_flag:
+                            local_ensemble, Cov_model = analysis.EnTKF_Analysis(local_ensemble)
+                        else:
+                            raise ValueError("Filter type not supported")
+                        
+                        # update the ensemble mean
+                        ensemble_vec_mean_local = np.mean(local_ensemble, axis=1)
+
+                        # inflate the ensemble
+                        local_ensemble = UtilsFunctions(params, local_ensemble).inflate_ensemble(in_place=True)
+
+                        # update the observation index
+                        km += 1
+                    
+                    # Step 6: Gather data back to Rank 0
+                    if rank_world == 0:
+                            recv_counts = send_counts  # Receiving the same amount we originally sent
+                            recv_displacements = displacements
+                            gathered_vec = np.zeros((num_rows, num_cols), dtype=np.float64)  # Allocate space for all data
+                    else:
+                        recv_counts = None
+                        recv_displacements = None
+                        gathered_vec = None  # Only root stores the final result
+
+                    # Step 7: Gather Data Back to Rank 0
+                    comm_world.Gatherv(local_ensemble, [gathered_vec, recv_counts, recv_displacements, MPI.DOUBLE], root=0)
+
+                    # Step 8: Rescatter Data to all processors of dimensions (nd, Nens)
+                    ensemble_vec_ = np.empty((nd, Nens), dtype=np.float64)
+                    comm_world.Scatterv(gathered_vec, ensemble_vec_, root=0)
+
+                    # Step 9: Compute the ensemble mean per proc
+                    ensemble_vec_mean[:,k+1] = np.mean(ensemble_vec_, axis=1)
+                    # save the ensemble
+                    ensemble_vec_full[:,:,k+1] = ensemble_vec_
+
+                    # before exiting the time loop, we have to gather data from all processors
+                    if k == params["nt"] - 1:
+                        # we are interested in ensemble_vec_full, ensemble_vec_mean, statevec_bg
+                        gathered_ens_vec_mean = comm_world.allgather(ensemble_vec_mean)
+                        gathered_ens_vec_full = comm_world.allgather(ensemble_vec_full)
+                        if rank_world == 0:
+                            # print(f"Ensemble mean shape: {[arr.shape for arr in gathered_ens_vec_mean]}")
+                            ensemble_vec_mean = np.vstack(gathered_ens_vec_mean)
+                            ensemble_vec_full = np.vstack(gathered_ens_vec_full)
+                            print(f"Ensemble mean shape: {ensemble_vec_mean.shape}")
+                        else:
+                            ensemble_vec_mean = np.empty((shape_ens[0],params["nt"]+1), dtype=np.float64)
+                            ensemble_vec_full = np.empty((shape_ens[0],Nens,params["nt"]+1), dtype=np.float64)
+                # exit()
+
+
+                # Now we will gather all local ensembles from all processors
+                # if k == params["nt"] - 1:
+                #     if rank_world == 0:
+                #         recv_counts = send_counts  # Receiving the same amount we originally sent
+                #         recv_displacements = displacements
+                #         gathered_ensemble = np.zeros((num_rows, num_cols), dtype=np.float64)  # Allocate space for all data
+                #     else:
+                #         recv_counts = None
+                #         recv_displacements = None
+                #         gathered_ensemble = None  # Only root stores the final result
+
+                #     # Step 7: Gather Data Back to Rank 0
+                #     comm_world.Gatherv(local_ensemble, [gathered_ensemble, recv_counts, recv_displacements, MPI.DOUBLE], root=0)
+
+                #     # Step 8: Root Rank Outputs the Result
+                #     if rank_world == 0:
+                #         print(f"Rank 0: Gathered ensemble shape: {gathered_ensemble.shape}")
+
+
             # -------------------------------------------------- end of cases 2 & 3 --------------------------------------------
 
             # --- case 4: Evenly distribute ensemble members among processors 
