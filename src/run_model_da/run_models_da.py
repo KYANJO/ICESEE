@@ -149,7 +149,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
         # ensemble_vec_local, start_vec, stop_vec = parallel_manager.state_vector_load_distribution(ensemble_vec, comm_filter)
 
         # --- icesee mpi parallel manager ---------------------------------------------------
-        rounds, color, sub_rank, sub_size, subcomm, rank_world, size_world, comm_world, start, stop = ParallelManager().icesee_mpi_ens_distribution(params)
+        rounds, color, sub_rank, sub_size, subcomm, subcomm_size, rank_world, size_world, comm_world, start, stop = ParallelManager().icesee_mpi_ens_distribution(params)
         if params["even_distribution"]:
             ensemble_local = copy.deepcopy(ensemble_vec[:,start:stop])
 
@@ -185,7 +185,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                 for ens in range(Nens):
                     comm_world.Barrier() # make sure all processors are in sync
                     ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, Q_err=Q_err, params=params, **model_kwargs)
-                    # comm_world.Barrier() # make sure all processors reach this point before moving on
+                    comm_world.Barrier() # make sure all processors reach this point before moving on
                    
                     gathered_ensemble = comm_world.allgather(ensemble_vec[:,ens]) #TODO: check if Allgather works
             
@@ -289,7 +289,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                     # inflate the ensemble
                     ens_T = UtilsFunctions(params, ens_T[:nd,:]).inflate_ensemble(in_place=True)
                             
-                    ensemble_vec = copy.deepcopy(ens_T[:,:])
+                    ensemble_vec = copy.deepcopy(ens_T[:nd,:])
             
                 # save the ensemble
                 ensemble_vec_full[:,:,k+1] = ensemble_vec[:nd,:]
@@ -318,12 +318,70 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
             #          - even distribution and load balancing leading to performance improvement
             #          - best for size_world/Nens is a whole number
             if params["default_run"]:
-                
+                # --- case 2: Form batches of sub-communicators and distribute resources among them ---
                 if Nens >= size_world:
-                    pass
+                    # store results for each round
+                    ens_list = []
+                    for round_id in range(rounds):
+                        ensemble_id = color + round_id * subcomm_size  # Global ensemble index
 
+                        if ensemble_id < Nens:  # Only process valid ensembles
+                            print(f"Rank {rank_world} processing ensemble {ensemble_id} in round {round_id + 1}/{rounds}")
+
+                            # Ensure all ranks in the subcommunicator are synchronized before running
+                            subcomm.Barrier()
+
+                            # Call the forecast step function
+                            ens = ensemble_id
+                            ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, Q_err=Q_err, params=params, **model_kwargs)
+
+                            # Ensure all ranks in the subcommunicator are synchronized before moving on
+                            subcomm.Barrier()
+
+                            # Gather results within each subcommunicator
+                            gathered_ensemble = subcomm.allgather(ensemble_vec[:,ens])
+
+                            # Ensure only rank = 0 in each subcommunicator gathers the results
+                            if sub_rank == 0:
+                                 gathered_ensemble = np.hstack(gathered_ensemble)
+
+                            ens_list.append(gathered_ensemble if sub_rank == 0 else None)
+
+                        # Gather results from all subcommunicators
+                        gathered_ensemble_global = comm_world.allgather(ens_list)
+                # --- case 3: Form Nens sub-communicators and distribute resources among them ---
                 elif Nens < size_world:
-                    pass
+                    # Ensure all ranks in subcomm are in sync 
+                    subcomm.Barrier()
+
+                    # Call the forecast step fucntion- Each subcomm runs the function indepadently
+                    ens = color # each subcomm has a unique color
+                    ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, Q_err=Q_err, params=params, **model_kwargs)
+
+                    # Ensure all ranks synchronize before moving on
+                    # subcomm.Barrier()
+
+                    # Gather results within each subcomm
+                    gathered_ensemble = subcomm.allgather(ensemble_vec[:,ens])
+
+                    # Ensure only rank = 0 in each subcomm gathers the results
+                    subcomm.Barrier()
+                    if sub_rank == 0:
+                        gathered_ensemble = np.hstack(gathered_ensemble)
+
+                    # Gather results from all subcomms
+                    gathered_ensemble_global = comm_world.allgather(gathered_ensemble)
+
+                if rank_world == 0:
+                    if size_world > Nens:
+                        # print(f"Ensemble shape: {[arr.shape for arr in gathered_ensemble_global]}")
+                        ensemble_vec = [arr for arr in gathered_ensemble_global if isinstance(arr, np.ndarray)]
+                    else:
+                        ensemble_vec = [arr for sublist in gathered_ensemble_global for arr in sublist if arr is not None]
+                    
+                    ensemble_vec = np.column_stack(ensemble_vec)
+                    # print(f"Ensemble shape: {ensemble_vec.shape}")
+                exit()
             # -------------------------------------------------- end of cases 2 & 3 --------------------------------------------
 
             # --- case 4: Evenly distribute ensemble members among processors 
