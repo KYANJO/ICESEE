@@ -490,23 +490,30 @@ class UtilsFunctions:
         """
         # Compute Euclidean distance matrix
         distance_matrix = self.compute_euclidean_distance(grid_x, grid_y)
+        # print(distance_matrix)
 
         # Normalize distances by the localization radius
         # if is radius is a scalar
         if np.isscalar(localization_radius):
-            r = distance_matrix / localization_radius
+            r = distance_matrix / (0.5*localization_radius)
         else:
             if localization_radius.shape[0] == distance_matrix.shape[0]:
-                r = distance_matrix / localization_radius[:, None]
+                r = distance_matrix / 0.5*localization_radius[:, None]
+                # r = np.ones_like(distance_matrix)*localization_radius[:, None]
             elif localization_radius.shape[0] > distance_matrix.shape[0]:  
                 obs_indices = np.arange(distance_matrix.shape[0])  # Select only the required points
-                r = distance_matrix / localization_radius[obs_indices, None]
+                r = distance_matrix / 0.5*localization_radius[obs_indices, None]
+                # r = np.ones_like(distance_matrix)*localization_radius[obs_indices, None]
 
         # Normalize distances by the localization radius
         # r = distance_matrix / localization_radius
+        if False:
+            # create a localization matrix without distance
+            r = np.ones_like(distance_matrix)*localization_radius
 
         # Compute tapering matrix using Gaspari-Cohn function
         tapering_matrix = self.gaspari_cohn(r)
+        # print(f"tapering matrix: {tapering_matrix}")
 
         return tapering_matrix
 

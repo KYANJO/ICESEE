@@ -43,10 +43,19 @@ class ParallelManager:
         self.rank_world = None  # Rank in MPI_COMM_WORLD
         self.size_world = None  # Size of MPI_COMM_WORLD
 
+        # ICESEE sub-communicators
+        self.comm_sub = None  # Sub-communicator for ensemble tasks
+        self.rank_sub = None  # Rank in the sub-communicator
+        self.size_sub = None  # Size of the sub-communicator
+        self.rounds   = None  # Number of processing rounds
+        self.color    = None  # Sub-communicator group identifier
+        self.key      = None  # Ordering within each sub-communicator
+
         # Model communicator (forecast step)
         self.COMM_model = None  # MPI communicator for model tasks
         self.rank_model = None  # Rank in the COMM_model communicator
         self.size_model = None  # Size of the COMM_model communicator
+
 
         # ICESS communicator for the analysis step
         self.COMM_filter = None  # MPI communicator for filter PEs
@@ -100,8 +109,150 @@ class ParallelManager:
         #  return the initialized parallel manager
         return self
 
+    def icesee_mpi_init(self, params):
+        """
+        Initializes MPI in an ICESEE application.
+        Ensures MPI is initialized safely and retrieves essential communication parameters.
+        """
+        if not MPI.Is_initialized():
+            try:
+                MPI.Init()
+            except Exception as e:
+                print(f"Error initializing MPI: {e}")
+                return None
+
+        self.COMM_WORLD = MPI.COMM_WORLD
+        self.size_world = self.COMM_WORLD.Get_size()
+        self.rank_world = self.COMM_WORLD.Get_rank()
+
+        Nens = params.get("Nens", 1)  # Number of ensemble members
+
+        if params.get("sequential_run", False):
+            return self.rank_world, self.size_world, self.COMM_WORLD
+        
+        if params.get("default_run", False):
+            if Nens >= self.size_world: 
+                # Divide ranks into `size` subcommunicators
+                subcomm_size = min(self.size_world, Nens)  # Use at most `Nens` groups
+                self.color = self.rank_world % subcomm_size  # Group ranks into `subcomm_size` subcommunicators
+                self.key = self.rank_world // subcomm_size  # Ordering within each subcommunicator
+            else:
+                # More processes than ensembles, map processes to ensembles efficiently
+                self.color = self.rank_world % Nens  
+                self.key = self.rank_world // Nens
+            
+            self.comm_sub = self.COMM_WORLD.Split(self.color, self.key)
+            self.rank_sub = self.comm_sub.Get_rank()
+            self.size_sub = self.comm_sub.Get_size()
+            return self.rank_sub, self.size_sub, self.comm_sub
+        
+        if params.get("even_distribution", False):
+            # split the global communicator into size subcommunicators
+            self.comm_sub = self.COMM_WORLD.Split(self.rank_world % self.size_world)
+            self.rank_sub = self.comm_sub.Get_rank()
+            self.size_sub = self.comm_sub.Get_size()
+            
+            return self.rank_sub, self.size_sub, self.comm_sub
+        
+    def icesee_mpi_ens_distribution(self, params):
+        """
+        Runs multiple ensemble members in parallel using `Nens` subcommunicators.
+        
+        Each subcommunicator runs in parallel, and its ranks work together.
+        The results are gathered within each subcommunicator and returned.
+
+        Parameters:
+            Nens: Number of ensemble members (subcommunicators)
+            params: Dictionary of parameters for the ICESEE application
+
+        Returns:
+            A tuple containing:
+                - rounds: Number of processing rounds required
+                - color: Subcommunicator group identifier
+                - subcomm: The MPI subcommunicator object
+                - sub_rank: Rank within the subcommunicator
+                - sub_size: Size of the subcommunicator
+                - rank_world: Global MPI rank
+                - size_world: Total MPI size
+                - comm_world: Global MPI communicator
+                - start: Start index for assigned ensembles (only if even_distribution is enabled)
+                - stop: Stop index for assigned ensembles (only if even_distribution is enabled)
+        """
+        Nens = params.get("Nens", 1)  # Number of ensemble members
+
+        comm_world = MPI.COMM_WORLD        # Global communicator
+        size_world = comm_world.Get_size() # Number of MPI processes
+        rank_world = comm_world.Get_rank() # Rank of this MPI process
+
+        if params.get("sequential_run", False):
+            return None, None, None, None, None, None, rank_world, size_world, comm_world, None, None
+
+        if params.get("default_run", False):
+            if Nens >= size_world: 
+                # Divide ranks into `size` subcommunicators
+                subcomm_size = min(size_world, Nens)  # Use at most `Nens` groups
+                color = rank_world % subcomm_size  # Group ranks into `subcomm_size` subcommunicators
+                key = rank_world // subcomm_size  # Ordering within each subcommunicator
+                
+                # Determine how many rounds of processing are needed
+                rounds = (Nens + subcomm_size - 1) // subcomm_size  # Ceiling division
+            
+            else:
+                # More processes than ensembles, map processes to ensembles efficiently
+                color = rank_world % Nens  
+                key = rank_world // Nens   
+                
+                rounds = 1  # Only one round of processing needed
+                subcomm_size = None
+            
+            subcomm = comm_world.Split(color, key)
+            # get rank and size for each subcommunicator
+            sub_rank = subcomm.Get_rank() # Rank within the subcommunicator
+            sub_size = subcomm.Get_size() # Size of the subcommunicator
+
+            return rounds, color, sub_rank, sub_size, subcomm, subcomm_size, rank_world, size_world, comm_world, None, None
+        
+        if params.get("even_distribution", False):
+            # --- Properly Distribute Tasks for All Cases ---
+            if Nens >= self.size_world:
+                if Nens > size_world:
+                    # Case 1: More ensembles than processes → Distribute as evenly as possible
+                    mem_per_task = Nens // size_world  # Base number of tasks per process
+                    remainder = Nens % size_world       # Extra tasks to distribute
+
+                    if rank_world < remainder:
+                        # the first remainder gets mem_per_task+1 tasks each
+                        start = rank_world * (mem_per_task + 1)
+                        stop = start + (mem_per_task + 1)
+                        # stop = start + mem_per_task
+                    else:
+                        #  the remaining (size - remainder) get mem_per_task tasks each
+                        start = rank_world * mem_per_task + remainder
+                        stop = start + mem_per_task
+                        # stop = start + mem_per_task-1
+
+                elif Nens == size_world:
+                    #  Assign at most one task per rank
+                    if rank_world < Nens:
+                        start, stop = rank_world, rank_world + 1
+                    else:
+                        # Extra ranks do nothing
+                        start, stop = 0, 0
+
+                # split the global communicator into size subcommunicators
+                subcomm = comm_world.Split(rank_world % size_world)
+                sub_rank = subcomm.Get_rank()
+                sub_size = subcomm.Get_size()
+
+                print(f"[Rank {rank_world}] Processing ensembles {start} to {stop}")
+
+            return None, None, sub_rank, sub_size, subcomm, None, rank_world, size_world, comm_world, start, stop
+    
+        return None
+
+
     # --- Parallel load distribution ---
-    def ensembles_load_distribution(self, ensemble,comm):
+    def ensembles_load_distribution(self, Nens = None, ensemble =np.empty((100,10))  ,comm=None):
         """
         Distributes ensemble members among MPI processes based on rank and size."""
 
@@ -110,41 +261,101 @@ class ParallelManager:
         size = comm.Get_size()
 
         # --- Properly Distribute Tasks for All Cases ---
-        if Nens > self.size_world:
-            # Case 1: More ensembles than processes → Distribute as evenly as possible
-            mem_per_task = Nens // size  # Base number of tasks per process
-            remainder = Nens % size       # Extra tasks to distribute
+        if Nens >= self.size_world:
+            if Nens > size:
+                # Case 1: More ensembles than processes → Distribute as evenly as possible
+                mem_per_task = Nens // size  # Base number of tasks per process
+                remainder = Nens % size       # Extra tasks to distribute
 
-            if rank < remainder:
-                # the first remainder gets mem_per_task+1 tasks each
-                start = rank * (mem_per_task + 1)
-                stop = start + (mem_per_task + 1)
-                # stop = start + mem_per_task
-            else:
-                #  the remaining (size - remainder) get mem_per_task tasks each
-                start = rank * mem_per_task + remainder
-                stop = start + mem_per_task
-                # stop = start + mem_per_task-1
+                if rank < remainder:
+                    # the first remainder gets mem_per_task+1 tasks each
+                    start = rank * (mem_per_task + 1)
+                    stop = start + (mem_per_task + 1)
+                    # stop = start + mem_per_task
+                else:
+                    #  the remaining (size - remainder) get mem_per_task tasks each
+                    start = rank * mem_per_task + remainder
+                    stop = start + mem_per_task
+                    # stop = start + mem_per_task-1
+
+            elif Nens == size:
+                #  Assign at most one task per rank
+                if rank < Nens:
+                    start, stop = rank, rank + 1
+                else:
+                    # Extra ranks do nothing
+                    start, stop = 0, 0
+
+            # split the global communicator into size subcommunicators
+            comm = comm.Split(rank % size)
+
+            subcomm = comm
+
+            print(f"[Rank {rank}] Processing ensembles {start} to {stop}")
         else:
             # Case 2: More processes than ensembles → Assign at most one task per rank
-            if rank < Nens:
-                start, stop = rank, rank + 1
-            else:
-                # Extra ranks do nothing
-                start, stop = 0, 0
+            if True:
+                if rank < Nens:
+                    start, stop = rank, rank + 1
+                else:
+                    # Extra ranks do nothing
+                    start, stop = 0, 0
+                
+                # workflow design
+                # 1. Split the global communicator (comm) into Nens subcommunicators (subcomm), so each ensemble member has a dedicated group of processes.
+                # 2. Each subcommunicator collectively updates its assigned ensemble member (one column of ensemble_state).
+                # 3. One process per subcommunicator (sub_rank == 0) gathers the updated results and sends them back to the global root (rank 0).
+                # 4. The global root collects the updated ensemble_state and proceeds with the analysis step.
+                # 5. The global root broadcasts the updated ensemble_state to all processes.
+                # 6. All processes proceed with the analysis step.
+
+            # case 3: distribute the ranks evenly among the ensemble members
+            #  - this is most beneficial to models that have mpi with in
+            if False:
+                # Determine how many processes should work on each ensemble member.
+                procs_per_ens = size // Nens
+                remainder = size % Nens  # Extra processes to distribute
+                
+                # Build a list with (ensemble_index, start_rank, end_rank) for each ensemble member.
+                ensemble_assignment = []
+                current_rank = 0
+                for ens in range(Nens):
+                    # First 'remainder' ensemble members get an extra process.
+                    num_procs = procs_per_ens + (1 if ens < remainder else 0)
+                    ensemble_assignment.append((ens, current_rank, current_rank + num_procs))
+                    current_rank += num_procs
+
+                # Identify which ensemble this rank belongs to.
+                for ens_index, rstart, rend in ensemble_assignment:
+                    if rstart <= rank < rend:
+                        local_rank = rank - rstart
+                        procs_assigned = rend - rstart
+                        break
+
+                # In this case, each rank gets the full column corresponding to its ensemble.
+                # local_ensemble = ensemble[:, ens_index:ens_index+1]
+                print(f"[Rank {rank}] Assigned ensemble {ens_index} (local rank {local_rank} "
+                    f"of {procs_assigned} processors).")
+                assign_info = (ens_index, local_rank, procs_assigned)
+                start = ens_index
+                stop = ens_index + 1
+
+                # Create a subcommunicator for the ensemble group.
+                # All processes handling the same ensemble member get the same "color".
+                subcomm = comm.Split(color=ens_index, key=rank)
 
         # --- Ensure All Ranks Participate (No Deadlocks) ---
-        if start == stop:
-            print(f"[Rank {rank}] No work assigned. Waiting at barrier.")
-        else:
-            print(f"[Rank {rank}] Processing ensembles {start} to {stop}")
+        # if start == stop:
+        #     print(f"[Rank {rank}] No work assigned. Waiting at barrier.")
+        # else:
+        #     print(f"[Rank {rank}] Processing ensembles {start} to {stop}")
         # return start, stop
 
         # form  local ensembles
         # ensemble_local = np.zeros((global_shape, stop-start))
         ensemble_local = ensemble[:global_shape,start:stop]
         # for memory issues return a deepcopy of the ensemble_local
-        return copy.deepcopy(ensemble_local), start, stop
+        return copy.deepcopy(ensemble_local), start, stop, subcomm
     
     # --- state vector load distribution ---
     def state_vector_load_distribution(self, state_vector,comm):
@@ -186,6 +397,44 @@ class ParallelManager:
         
         return state_vector_local, start, stop
     
+    # row vector load distribution
+    def icesee_mpi_row_distribution(self, comm, num_rows):
+        """ Distribute row vector among MPI processes based on rank and size.
+            Only valid if num_rows > size_world.
+        """
+
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+
+        if num_rows > size:
+            # --- Properly Distribute Tasks for All Cases ---
+            # Determine rows assigned to each rank
+            rows_per_rank = num_rows // size
+            extra = num_rows % size  # Handle uneven splits
+
+            if rank < extra:
+                local_rows = rows_per_rank + 1
+                start_row = rank * (rows_per_rank + 1)
+            else:
+                local_rows = rows_per_rank
+                start_row = rank * rows_per_rank + extra
+
+            end_row = start_row + local_rows
+        else:
+            # Case 2: More processes than rows → Assign at most one row per rank
+            if rank < num_rows:
+                local_rows = 1
+                start_row = rank
+            else:
+                # Extra ranks do nothing
+                local_rows = 0
+                start_row = 0
+
+            end_row = start_row + local_rows
+
+        return rows_per_rank, extra, local_rows, start_row, end_row
+
+    
     # --- memory formulation ---
     def memory_usage(self, global_shape, Nens, bytes_per_element=8):
         """
@@ -212,6 +461,19 @@ class ParallelManager:
         comm.Allgather([data, MPI.DOUBLE], [gathered_data, MPI.DOUBLE])
 
         return gathered_data
+
+    def all_reduce_sum(self, comm, data):
+        """
+        Reduces data from all ranks using collective communication."""
+
+        size = comm.Get_size()
+        data = np.asarray(data)  # Ensure it's an array
+
+        # Allocate buffer for reduced data
+        reduced_data = np.zeros_like(data)
+        comm.Allreduce([data, MPI.DOUBLE], [reduced_data, MPI.DOUBLE], op=MPI.SUM)
+
+        return reduced_data
     
     # -- method to scatter data to all ranks
     def scatter_data(self,comm, data):
