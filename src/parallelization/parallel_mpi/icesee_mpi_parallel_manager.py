@@ -154,8 +154,6 @@ class ParallelManager:
             
             return self.rank_sub, self.size_sub, self.comm_sub
         
-
-    
     def icesee_mpi_ens_distribution(self, params):
         """
         Runs multiple ensemble members in parallel using `Nens` subcommunicators.
@@ -186,6 +184,9 @@ class ParallelManager:
         size_world = comm_world.Get_size() # Number of MPI processes
         rank_world = comm_world.Get_rank() # Rank of this MPI process
 
+        if params.get("sequential_run", False):
+            return None, None, None, None, None, None, rank_world, size_world, comm_world, None, None
+
         if params.get("default_run", False):
             if Nens >= size_world: 
                 # Divide ranks into `size` subcommunicators
@@ -202,13 +203,14 @@ class ParallelManager:
                 key = rank_world // Nens   
                 
                 rounds = 1  # Only one round of processing needed
+                subcomm_size = None
             
             subcomm = comm_world.Split(color, key)
             # get rank and size for each subcommunicator
             sub_rank = subcomm.Get_rank() # Rank within the subcommunicator
             sub_size = subcomm.Get_size() # Size of the subcommunicator
 
-            return rounds, color, subcomm, sub_rank, sub_size, rank_world, size_world, comm_world, None, None
+            return rounds, color, sub_rank, sub_size, subcomm, subcomm_size, rank_world, size_world, comm_world, None, None
         
         if params.get("even_distribution", False):
             # --- Properly Distribute Tasks for All Cases ---
@@ -239,10 +241,12 @@ class ParallelManager:
 
                 # split the global communicator into size subcommunicators
                 subcomm = comm_world.Split(rank_world % size_world)
+                sub_rank = subcomm.Get_rank()
+                sub_size = subcomm.Get_size()
 
                 print(f"[Rank {rank_world}] Processing ensembles {start} to {stop}")
 
-            return None, None, subcomm, None, None, rank_world, size_world, comm_world, start, stop
+            return None, None, sub_rank, sub_size, subcomm, None, rank_world, size_world, comm_world, start, stop
     
         return None
 
@@ -393,6 +397,44 @@ class ParallelManager:
         
         return state_vector_local, start, stop
     
+    # row vector load distribution
+    def icesee_mpi_row_distribution(self, comm, num_rows):
+        """ Distribute row vector among MPI processes based on rank and size.
+            Only valid if num_rows > size_world.
+        """
+
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+
+        if num_rows > size:
+            # --- Properly Distribute Tasks for All Cases ---
+            # Determine rows assigned to each rank
+            rows_per_rank = num_rows // size
+            extra = num_rows % size  # Handle uneven splits
+
+            if rank < extra:
+                local_rows = rows_per_rank + 1
+                start_row = rank * (rows_per_rank + 1)
+            else:
+                local_rows = rows_per_rank
+                start_row = rank * rows_per_rank + extra
+
+            end_row = start_row + local_rows
+        else:
+            # Case 2: More processes than rows → Assign at most one row per rank
+            if rank < num_rows:
+                local_rows = 1
+                start_row = rank
+            else:
+                # Extra ranks do nothing
+                local_rows = 0
+                start_row = 0
+
+            end_row = start_row + local_rows
+
+        return rows_per_rank, extra, local_rows, start_row, end_row
+
+    
     # --- memory formulation ---
     def memory_usage(self, global_shape, Nens, bytes_per_element=8):
         """
@@ -419,6 +461,19 @@ class ParallelManager:
         comm.Allgather([data, MPI.DOUBLE], [gathered_data, MPI.DOUBLE])
 
         return gathered_data
+
+    def all_reduce_sum(self, comm, data):
+        """
+        Reduces data from all ranks using collective communication."""
+
+        size = comm.Get_size()
+        data = np.asarray(data)  # Ensure it's an array
+
+        # Allocate buffer for reduced data
+        reduced_data = np.zeros_like(data)
+        comm.Allreduce([data, MPI.DOUBLE], [reduced_data, MPI.DOUBLE], op=MPI.SUM)
+
+        return reduced_data
     
     # -- method to scatter data to all ranks
     def scatter_data(self,comm, data):

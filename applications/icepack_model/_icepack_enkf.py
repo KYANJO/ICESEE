@@ -109,7 +109,7 @@ def generate_true_state(statevec_true=None,params=None, **kwargs):
 
     h = h0.copy(deepcopy=True)
     u = u0.copy(deepcopy=True)
-    for k in tqdm.trange(nt):
+    for k in range(nt):
         # call the ice stream model to update the state variables
         h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
 
@@ -151,14 +151,21 @@ def generate_nurged_state(statevec_nurged=None,params=None,**kwargs):
     nurged_entries  = kwargs.get('nurged_entries', None)
 
     #  create a bump -100 to 0
-    h_indx = int(np.ceil(nurged_entries+1))
+    # h_indx = int(np.ceil(nurged_entries+1))
+    if hdim > int(np.ceil(nurged_entries+1)):
+        h_indx = int(np.ceil(nurged_entries+1))
+    else:
+        # 10% of the hdim so that the bump is not too large
+        h_indx = int(np.ceil(hdim*0.01))
+   
     # u_indx = int(np.ceil(u_nurge_ic+1))
     u_indx = 1
     h_bump = np.linspace(-h_nurge_ic,0,h_indx)
     u_bump = np.linspace(-u_nurge_ic,0,h_indx)
     # h_bump = np.random.uniform(-h_nurge_ic,0,h_indx)
     # u_bump = np.random.uniform(-u_nurge_ic,0,h_indx)
-
+    # print(f"hdim: {hdim}, h_indx: {h_indx}")
+    # print(f"[Debug]: h_bump shape: {h_bump.shape} h0_index: {h0.dat.data_ro[:h_indx].shape}")
     h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
     u_with_bump = u_bump + u0.dat.data_ro[:h_indx,0]
     v_with_bump = u_bump + u0.dat.data_ro[:h_indx,1]
@@ -211,7 +218,7 @@ def generate_nurged_state(statevec_nurged=None,params=None,**kwargs):
         a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
         statevec_nurged[3*hdim:,0] = a.dat.data_ro
 
-    for k in tqdm.trange(nt):
+    for k in range(nt):
         # aa   = a_in_p*(np.sin(tnur[k]) + 1)
         # daa  = da_p*(np.sin(tnur[k]) + 1)
         aa = a_in_p
@@ -264,7 +271,14 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
     v_perturbed = statevec_nurged[2*hdim:3*hdim,0]
 
     # initialize the ensemble members
-    h_indx = int(np.ceil(nurged_entries+1))
+    # h_indx = int(np.ceil(nurged_entries+1))
+    # h_indx = int(np.ceil(nurged_entries+1))
+    if hdim > int(np.ceil(nurged_entries+1)):
+        h_indx = int(np.ceil(nurged_entries+1))
+    else:
+        # 10% of the hdim so that the bump is not too large
+        h_indx = int(np.ceil(hdim*0.01))
+
     for i in range(N):
         # intial thickness perturbed by bump
         # h_bump = np.random.uniform(-h_nurge_ic,0,h_indx)

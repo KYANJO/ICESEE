@@ -12,6 +12,8 @@ import tqdm
 import numpy as np
 from scipy.stats import multivariate_normal,norm
 
+os.environ["OMP_NUM_THREADS"] = "1"
+
 # firedrake imports
 import firedrake
 from firedrake import *
@@ -34,14 +36,13 @@ def initialize_model(physical_params, modeling_params, comm):
     size = comm.Get_size()
     rank = comm.Get_rank()
 
-    # split the communicator for the mesh (equal split for easy parallelization)
-    comm = comm.Split(rank % size)
     # --- Geometry and Mesh ---
     PETSc.Sys.Print('Setting up mesh across %d processes' % size)
     Lx, Ly = int(float(physical_params["Lx"])), int(float(physical_params["Ly"]))
     nx, ny = int(float(physical_params["nx"])), int(float(physical_params["ny"]))
     PETSc.Sys.Print(f"Mesh dimensions: {Lx} x {Ly} with {nx} x {ny} elements")
 
+    # --- make the comm object available to the mesh function
     mesh = firedrake.RectangleMesh(nx, ny, Lx, Ly, quadrilateral=True, comm=comm)
 
     # -- get the degree of the finite element space
@@ -126,6 +127,9 @@ def initialize_model(physical_params, modeling_params, comm):
     # --- Update h and u ---
     h = h0.copy(deepcopy=True)
     u = u0.copy(deepcopy=True)
+
+    # print size h
+    # print(f"Size of the function space: {h.dat.data.size} on rank {rank}")
 
     return nx,ny,Lx,Ly,x,y,h,u,a,a_p,b,b_in,b_out,h0,u0,solver_weertman,A,C,Q,V,
 
