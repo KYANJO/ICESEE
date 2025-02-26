@@ -131,7 +131,7 @@ def save_all_data(enkf_params=None, nofilter=None, **kwargs):
     filter_type = "true-wrong" if nofilter else enkf_params["filter_type"]
 
     # --- Local MPI implementation ---
-    if re.match(r"\AMPI\Z", enkf_params["parallel_flag"], re.IGNORECASE):
+    if re.match(r"\AMPI\Z", enkf_params["parallel_flag"], re.IGNORECASE) or re.match(r"\AMPI_model\Z", enkf_params["parallel_flag"], re.IGNORECASE):
         from mpi4py import MPI
         comm = MPI.COMM_WORLD  # Initialize MPI
         rank = comm.Get_rank()  # Get rank of current MPI process
@@ -146,6 +146,8 @@ def save_all_data(enkf_params=None, nofilter=None, **kwargs):
                 commandlinerun=enkf_params["commandlinerun"],
                 **kwargs
             )
+        else:
+            None
     else:
         save_arrays_to_h5(
             filter_type=filter_type,  # Use updated or original filter_type
