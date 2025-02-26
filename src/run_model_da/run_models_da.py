@@ -12,6 +12,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse import block_diag
 from scipy.ndimage import zoom
 from scipy.stats import multivariate_normal
+from scipy.spatial import distance_matrix
 
 import copy
 
@@ -110,19 +111,38 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
         num_state_vars = params["num_state_vars"]
         num_params = params["num_param_vars"]
         # get the the inital smb
-        smb_init = ensemble_vec[num_state_vars*hdim:,:]
+        # smb_init = ensemble_vec[num_state_vars*hdim:,:]
+        inflation_factor = params["inflation_factor"] #TODO: store this, for localization debuging
         
         if True:
-            x_points = np.linspace(0, model_kwargs["Lx"], model_kwargs["nx"])
-            y_points = np.linspace(0, model_kwargs["Ly"], model_kwargs["ny"])
+            Lx, Ly = model_kwargs["Lx"], model_kwargs["Ly"]
+            nx, ny = model_kwargs["nx"], model_kwargs["ny"]
+            x_points = np.linspace(0, model_kwargs["Lx"], model_kwargs["nx"]+1)
+            y_points = np.linspace(0, model_kwargs["Ly"], model_kwargs["ny"]+1)
             grid_x, grid_y = np.meshgrid(x_points, y_points)
 
-        dx, dy = model_kwargs["Lx"] / model_kwargs["nx"], model_kwargs["Ly"] / model_kwargs["ny"]  # Grid spacing
+            grid_points = np.vstack((grid_x.ravel(), grid_y.ravel())).T
 
-        # Create 2D grid
-        x_grid = np.arange(model_kwargs["nx"]) * dx
-        y_grid = np.arange(model_kwargs["nx"]) * dy
-        X, Y = np.meshgrid(x_grid, y_grid, indexing='ij')
+            # Adjust grid if n_points != nx * ny (interpolating for 425 points)
+            n_points = hdim
+            missing_rows = n_points - grid_points.shape[0]
+            if missing_rows > 0:
+                last_row = grid_points[-1]  # Get the last available row
+                extrapolated_rows = np.tile(last_row, (missing_rows, 1))  # Repeat last row
+                grid_points = np.vstack([grid_points, extrapolated_rows])  # Append extrapolated rows
+
+            dist_matrix = distance_matrix(grid_points, grid_points) 
+
+            # Normalize distance matrix
+            L = 2400
+            r_matrix = dist_matrix / L
+
+        # dx, dy = model_kwargs["Lx"] / model_kwargs["nx"], model_kwargs["Ly"] / model_kwargs["ny"]  # Grid spacing
+
+        # # Create 2D grid
+        # x_grid = np.arange(model_kwargs["nx"]) * dx
+        # y_grid = np.arange(model_kwargs["nx"]) * dy
+        # X, Y = np.meshgrid(x_grid, y_grid, indexing='ij')
         
 
     # --- call the ICESEE mpi parallel manager ---
@@ -153,7 +173,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
         rounds, color, sub_rank, sub_size, subcomm, subcomm_size, rank_world, size_world, comm_world, start, stop = ParallelManager().icesee_mpi_ens_distribution(params)
         if params["even_distribution"]:
             ensemble_local = copy.deepcopy(ensemble_vec[:,start:stop])
-
+            
         # --- row vector load distribution ---   
         # local_rows, start_row, end_row = ParallelManager().icesee_mpi_row_distribution(ensemble_vec, params)
 
@@ -608,102 +628,46 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                             Cov_model = np.zeros_like(local_cov)
                             comm_world.Allreduce([local_cov, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
                         elif EnRSKF_flag or EnTKF_flag:
+                            local_cov = local_ensemble_centered / (Nens - 1)
                             Cov_model = np.zeros_like(local_ensemble_centered)
                             comm_world.Allreduce([local_ensemble_centered, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
 
-                        # method 3
+                        # --- localization ---
                         if params["localization_flag"]:
-                            # try with the localization matrix
-                            cutoff_distance = 6000
+                            # call the gahpari-cohn localization function
+                            loc_matrix_spatial = gaspari_cohn(r_matrix)
 
-                            # rho = np.zeros_like(Cov_model)
-                            rho = np.ones_like(Cov_model)
-                            # for j in range(Cov_model.shape[0]):
-                            #     for i in range(Cov_model.shape[1]):
-                            #         rad_x = np.abs(X[j] - X[i])
-                            #         rad_y = np.abs(Y[j] - Y[i])
-                            #         # rad_x = np.abs(grid_x[j] - grid_x[i])
-                            #         # rad_y = np.abs(grid_y[j] - grid_y[i])
-                            #         rad = np.sqrt(rad_x**2 + rad_y**2)
-                            #         # print(f"Rad: {rad}")
-                            #         # rad = np.array([rad/cutoff_distance])[0]
-                            #         rad = rad/cutoff_distance
-                            #         print(f"Rad: {rad}")
-                            #         rho[j,i] = gaspari_cohn(rad)
-
-                            # Cov_model = np.multiply(Cov_model, rho)
-                            Cov_model = rho * Cov_model
+                            # expand to full state space
+                            loc_matrix = np.empty_like(Cov_model)
+                            for var_i in range(params["total_state_param_vars"]):
+                                for var_j in range(params["total_state_param_vars"]):
+                                    start_i, start_j = var_i * hdim, var_j * hdim
+                                    loc_matrix[start_i:start_i+hdim, start_j:start_j+hdim] = loc_matrix_spatial
                             
+                            # apply the localization matrix
+                            Cov_model = loc_matrix * Cov_model
 
-                            if False:
-                                # find observation locations in the grid
-                                obs_function = UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km])
-                                # randomly pick an observation locatios
-                                print(f"Observation function : {obs_function}")
-                                # compute distances
-                                dist_x = np.abs(X - X[obs_i,obs_j])
-                                dist_y = np.abs(Y - Y[obs_i,obs_j])
-
-                                # comopute the eculedian distance
-                                dist = np.sqrt(dist_x**2 + dist_y**2)
-
-                                #cutoff distance
-                                cutoff_distance = 6000
-
-                                # compute the taper function
-                                taper = UtilsFunctions(params, ensemble_vec).gaspari_cohn(dist/cutoff_distance)
-
-                                # apply the taper function to the covariance matrix
-                                Cov_model = np.multiply(Cov_model, taper)
-
-                            # sate block size
-                            # ---------------------------------------------
+                            # inflate the top-left (smb h) and bottom-right (h smb) blocks of the covariance matrix 
                             state_block_size = num_state_vars*hdim
-                            # radius = 4000
-                            # radius = UtilsFunctions(params, ensemble_vec[:state_block_size,:]).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=1.5, method='variance')
-                            # localization_weights = UtilsFunctions(params, ensemble_vec[:state_block_size,:]).create_tapering_matrix(grid_x, grid_y, radius)
-                            # ---------------------------------------------
-                            # radius = UtilsFunctions(params, ensemble_vec[:,:]).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=2.0, method='correlation')
-                            # localization_weights = UtilsFunctions(params, ensemble_vec[:,:]).create_tapering_matrix(grid_x, grid_y, radius)
-                            if EnKF_flag or DEnKF_flag:
-                                # ------------------------------
-                                # localization_weights_resized = np.eye(Cov_model[:state_block_size,:state_block_size].shape[0])
-                                # localization_weights_resized[:localization_weights.shape[0], :localization_weights.shape[1]] = localization_weights
-                                # Cov_model[:state_block_size, :state_block_size] *= localization_weights_resized 
+                            h_smb_block = Cov_model[:hdim,state_block_size:]
+                            smb_h_block = Cov_model[state_block_size:,:hdim]
 
-                                # check if maximum value of smb is greater than 1.25*smb_obs
-                                if False: 
-                                    smb = ensemble_vec[state_block_size:,:]
-                                    smb_crit = 1.05*np.max(np.abs(hu_obs[state_block_size:,km]))
-                                    smb_crit2 = np.max(Cov_model[567:,567:])
-                                    smb_cov = np.cov(smb_init)
-                                    smb_flag1 = smb_crit < np.max(np.abs(smb))
-                                    smb_flag2 = smb_crit2 > 1.02*np.max(smb_cov)
-                                    if smb_flag2:
-                                        # force the smb to be 5% 0f the smb_obs
-                                        # t = model_kwargs["t"]
-                                        # ensemble_vec[state_block_size:,:] = np.min(smb_init, smb_init + (smb-smb_init)*t[k]/(t[params["nt"]-1] - t[0]))
-                                        ensemble_vec[state_block_size:,:] = smb_init
-                                # ------------------------------
-                                # radius = UtilsFunctions(params, ensemble_vec).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=2.0, method='correlation')
-                                # print(f"Adaptive localization radius: {radius}")
-                                # localization_weights = UtilsFunctions(params, ensemble_vec).create_tapering_matrix(grid_x, grid_y, radius)
-                                # localization_weights_resized = np.eye(Cov_model.shape[0])
-                                # localization_weights_resized[:localization_weights.shape[0], :localization_weights.shape[1]] = localization_weights
+                            # apply the inflation factor
+                            params["inflation_factor"] = 2.0
+                            smb_h_block = UtilsFunctions(params, smb_h_block).inflate_ensemble(in_place=True)
+                            h_smb_block = UtilsFunctions(params, h_smb_block).inflate_ensemble(in_place=True)
 
-                                # # Convert to sparse representation
-                                # localization_weights = csr_matrix(localization_weights_resized)
-
-                                # # Apply sparse multiplication
-                                # Cov_model = csr_matrix(Cov_model).multiply(localization_weights)
-                            elif EnRSKF_flag or EnTKF_flag:
-                                localization_weights_resized = np.eye(Cov_model[:state_block_size, :].shape[0])
-                                print("localization_weights:", localization_weights)
-                                localization_weights_resized[:localization_weights.shape[0], :Nens] = localization_weights
-                                Cov_model[:state_block_size, :] *= localization_weights_resized
-
+                            # update the covariance matrix
+                            Cov_model[:hdim,state_block_size:] = h_smb_block
+                            Cov_model[state_block_size:,:hdim] = smb_h_block
+                            
+                            
+                            # if EnKF_flag or DEnKF_flag:
+                                
+                            # elif EnRSKF_flag or EnTKF_flag:
+                                
                         # Call the EnKF class for the analysis step
-                        mpi_start = MPI.Wtime()
+                        # mpi_start = MPI.Wtime()
 
 
                         # if True:
@@ -730,19 +694,20 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
 
                         ensemble_vec_mean[:,k+1] = np.mean(ensemble_vec, axis=1)
 
-                        mpi_stop = MPI.Wtime()
+                        # mpi_stop = MPI.Wtime()
 
-                        # print(f"Rank: {rank}, Time taken for analysis step: {mpi_stop - mpi_start}")
-                        # get total time taken for the analysis step
-                        total_time = comm_world.reduce(mpi_stop - mpi_start, op=MPI.SUM, root=0)
-                        if rank_world == 0:
-                            print(f"Total time taken for analysis step: {total_time/60} minutes")
+                        # # print(f"Rank: {rank}, Time taken for analysis step: {mpi_stop - mpi_start}")
+                        # # get total time taken for the analysis step
+                        # total_time = comm_world.reduce(mpi_stop - mpi_start, op=MPI.SUM, root=0)
+                        # if rank_world == 0:
+                        #     print(f"Total time taken for analysis step: {total_time/60} minutes")
 
 
                         # update the ensemble with observations instants
                         km += 1
 
                         # inflate the ensemble
+                        params["inflation_factor"] = inflation_factor
                         ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
                         # ensemble_vec = UtilsFunctions(params, ensemble_vec)._inflate_ensemble()
                     
@@ -1188,7 +1153,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
     # close the progress bar
     if rank_world == 0:
         pbar.close()
-    # comm.Barrier()
+    comm_world.Barrier()
     return ensemble_vec_full, ensemble_vec_mean, statevec_bg
 
 

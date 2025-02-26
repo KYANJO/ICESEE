@@ -78,11 +78,44 @@ statevec_nurged = generate_nurged_state(
     **kwargs  
 )
 
-# --- Synthetic Observations ---
-PETSc.Sys.Print("Generating synthetic observations ...")
-utils_funs = UtilsFunctions(params, statevec_true)
-hu_obs = utils_funs._create_synthetic_observations(statevec_true,**kwargs)
+if params["even_distribution"]:
+    # --- Synthetic Observations ---
+    PETSc.Sys.Print("Generating synthetic observations ...")
+    utils_funs = UtilsFunctions(params, statevec_true)
+    hu_obs = utils_funs._create_synthetic_observations(statevec_true,**kwargs)
+else:
+    # gather the true and nurged states from all the processors
+    statevec_true = comm.allgather(statevec_true)
+    statevec_nurged = comm.allgather(statevec_nurged)
+    if rank == 0:
+        statevec_true = [arr for arr in statevec_true if isinstance(arr,np.ndarray)]
+        statevec_nurged = [arr for arr in statevec_nurged if isinstance(arr,np.ndarray)]
+        # print(f"{[arr.shape for arr in statevec_true]}")
+        statevec_true = np.vstack(statevec_true)
+        statevec_nurged = np.vstack(statevec_nurged)
+        shape_ = np.array(statevec_true.shape,dtype=np.int32)
+    else:
+        shape_ = np.empty(2,dtype=np.int32)
 
+    # --- Synthetic Observations ---
+    if rank == 0:
+        PETSc.Sys.Print("Generating synthetic observations ...")
+        utils_funs = UtilsFunctions(params, statevec_true)
+        hu_obs = utils_funs._create_synthetic_observations(statevec_true,**kwargs)
+        # print(f"Rank [{rank}] Shape of the observations: {hu_obs.shape}")
+    else:
+        hu_obs = np.empty((shape_[0],params["number_obs_instants"]),dtype=np.float64)
+
+    hu_obs,shape_ = comm.bcast([hu_obs,shape_], root=0)
+    # print(f"Shape of the observations: {hu_obs.shape}")
+
+    if rank != 0:
+        statevec_true = np.empty(shape_,dtype=np.float64)
+        statevec_nurged = np.empty(shape_,dtype=np.float64)
+
+    # Bcast the true and nurged states
+    comm.Bcast(statevec_true, root=0)
+    comm.Bcast(statevec_nurged, root=0)
 
 PETSc.Sys.Print("Initializing the ensemble ...")
 statevec_bg, statevec_ens, statevec_ens_mean, statevec_ens_full = initialize_ensemble(
@@ -121,8 +154,9 @@ if True:
     )
 
     # load data to be written to file
-    comm.Barrier()
-    if rank == 0:
+    # comm.Barrier()
+    # if rank == 0:
+    if True:
         PETSc.Sys.Print("Saving data ...")
         save_all_data(
             enkf_params=enkf_params,
