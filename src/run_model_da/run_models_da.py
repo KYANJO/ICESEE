@@ -29,6 +29,7 @@ from utils import *
 import re
 from EnKF.python_enkf.EnKF import EnsembleKalmanFilter as EnKF
 from supported_models import SupportedModels
+from localization_func import localization
 
 # ---- Run model with EnKF ----
 # @njit
@@ -117,25 +118,32 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
         if True:
             Lx, Ly = model_kwargs["Lx"], model_kwargs["Ly"]
             nx, ny = model_kwargs["nx"], model_kwargs["ny"]
-            x_points = np.linspace(0, model_kwargs["Lx"], model_kwargs["nx"]+1)
-            y_points = np.linspace(0, model_kwargs["Ly"], model_kwargs["ny"]+1)
-            grid_x, grid_y = np.meshgrid(x_points, y_points)
 
-            grid_points = np.vstack((grid_x.ravel(), grid_y.ravel())).T
+            # --- call the localization function (with adaptive localization) ---
+            state_size = params["total_state_param_vars"]*hdim
+            adaptive_localization = False   
+            if not adaptive_localization:
+                x_points = np.linspace(0, model_kwargs["Lx"], model_kwargs["nx"]+1)
+                y_points = np.linspace(0, model_kwargs["Ly"], model_kwargs["ny"]+1)
+                grid_x, grid_y = np.meshgrid(x_points, y_points)
 
-            # Adjust grid if n_points != nx * ny (interpolating for 425 points)
-            n_points = hdim
-            missing_rows = n_points - grid_points.shape[0]
-            if missing_rows > 0:
-                last_row = grid_points[-1]  # Get the last available row
-                extrapolated_rows = np.tile(last_row, (missing_rows, 1))  # Repeat last row
-                grid_points = np.vstack([grid_points, extrapolated_rows])  # Append extrapolated rows
+                grid_points = np.vstack((grid_x.ravel(), grid_y.ravel())).T
 
-            dist_matrix = distance_matrix(grid_points, grid_points) 
+                # Adjust grid if n_points != nx * ny (interpolating for 425 points)
+                n_points = hdim
+                missing_rows = n_points - grid_points.shape[0]
+                if missing_rows > 0:
+                    last_row = grid_points[-1]  # Get the last available row
+                    extrapolated_rows = np.tile(last_row, (missing_rows, 1))  # Repeat last row
+                    grid_points = np.vstack([grid_points, extrapolated_rows])  # Append extrapolated rows
 
-            # Normalize distance matrix
-            L = 2400
-            r_matrix = dist_matrix / L
+                dist_matrix = distance_matrix(grid_points, grid_points) 
+
+                # Normalize distance matrix
+                L = 2654
+                r_matrix = dist_matrix / L
+            else:
+                loc_matrix = localization(Lx,Ly,nx, ny, hdim, params["total_state_param_vars"], Nens, state_size)
 
         # dx, dy = model_kwargs["Lx"] / model_kwargs["nx"], model_kwargs["Ly"] / model_kwargs["ny"]  # Grid spacing
 
@@ -634,17 +642,20 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
 
                         # --- localization ---
                         if params["localization_flag"]:
-                            # call the gahpari-cohn localization function
-                            loc_matrix_spatial = gaspari_cohn(r_matrix)
+                            if not adaptive_localization:
+                                # call the gahpari-cohn localization function
+                                loc_matrix_spatial = gaspari_cohn(r_matrix)
 
-                            # expand to full state space
-                            loc_matrix = np.empty_like(Cov_model)
-                            for var_i in range(params["total_state_param_vars"]):
-                                for var_j in range(params["total_state_param_vars"]):
-                                    start_i, start_j = var_i * hdim, var_j * hdim
-                                    loc_matrix[start_i:start_i+hdim, start_j:start_j+hdim] = loc_matrix_spatial
-                            
-                            # apply the localization matrix
+                                # expand to full state space
+                                loc_matrix = np.empty_like(Cov_model)
+                                for var_i in range(params["total_state_param_vars"]):
+                                    for var_j in range(params["total_state_param_vars"]):
+                                        start_i, start_j = var_i * hdim, var_j * hdim
+                                        loc_matrix[start_i:start_i+hdim, start_j:start_j+hdim] = loc_matrix_spatial
+                                
+                                # apply the localization matrix
+                                # Cov_model = loc_matrix * Cov_model
+                                
                             Cov_model = loc_matrix * Cov_model
 
                             # inflate the top-left (smb h) and bottom-right (h smb) blocks of the covariance matrix 
@@ -653,7 +664,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                             smb_h_block = Cov_model[state_block_size:,:hdim]
 
                             # apply the inflation factor
-                            params["inflation_factor"] = 2.0
+                            params["inflation_factor"] = 1.2
                             smb_h_block = UtilsFunctions(params, smb_h_block).inflate_ensemble(in_place=True)
                             h_smb_block = UtilsFunctions(params, h_smb_block).inflate_ensemble(in_place=True)
 
