@@ -442,7 +442,7 @@ class ParallelManager:
         return global_shape * Nens * bytes_per_element/1e9  # Convert to GB
 
     # ---- Collective Communication Operations ----
-    # -- method to gather data from all ranks
+    # -- method to gather data from all ranks (many to many)
     def all_gather_data(self, comm, data):
         """
         Gathers data from all ranks using collective communication."""
@@ -460,6 +460,19 @@ class ParallelManager:
         # Use Allgather to collect data from all ranks
         comm.Allgather([data, MPI.DOUBLE], [gathered_data, MPI.DOUBLE])
 
+        return gathered_data
+    
+    # -- method to gather data from all ranks (many to one)
+    def gather_data(self, comm, data, root=0):
+        """
+        Gathers data from all ranks using collective communication."""
+        data = np.asarray(data)
+        size = comm.Get_size()
+        if comm.Get_rank() == root:
+            gathered_data = np.empty((size,) + data.shape, dtype=np.float64)
+        else:
+            gathered_data = None
+        comm.Gather([data, MPI.DOUBLE], [gathered_data, MPI.DOUBLE], root=root)
         return gathered_data
 
     def all_reduce_sum(self, comm, data):

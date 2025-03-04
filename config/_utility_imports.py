@@ -72,7 +72,7 @@ if not flag_jupyter:
 
     # CL args.
     parser = ArgumentParser(description='ICESEE: Ice Sheet Parameter and State Estimation model')
-    parser.add_argument('--Nens', type=int, required=True, help='ensemble members')
+    parser.add_argument('--Nens', type=int, required=False, default=2, help='ensemble members')
     parser.add_argument('--verbose', action='store_true', help='verbose output')
     parser.add_argument('--default_run', action='store_true', help='default run')
     parser.add_argument('--sequential_run', action='store_true', help='sequential run')
@@ -80,31 +80,9 @@ if not flag_jupyter:
     parser.add_argument('execution_mode', type=int, choices=[0, 1, 2], nargs='?', help='Execution mode: 0=default_run, 1=sequential_run, 2=even_distribution')
 
     args = parser.parse_args()
-    # **Check if running in Jupyter Notebook**
-    # if 'ipykernel' in sys.modules:
-    #     print("Running in Jupyter - Using default arguments")
 
-    #     from argparse import Namespace  # Convert dictionary to object
-    #     args = Namespace(
-    #         Nens=24,
-    #         verbose=False,
-    #         default_run=False,
-    #         sequential_run=False,
-    #         even_distribution=False,
-    #         execution_mode="default_run"  # Ensure this exists!
-    #     )
-    #     # eist the routine
-    #     sys.exit(0)
-    # else:
-    #     args = parser.parse_args()
-
-    # Set verbose variable (default is False unless overridden)
-    # verbose = args.verbose
-
-    # check if running in Jupyter notebook (for visualization)
-
-
-    # locals().update(args.__dict__)
+    # check if default run arugment is provided
+    run_flag = not (args.default_run or args.sequential_run or args.even_distribution)
 
     # Determine execution mode
     selected_mode = "default_run"  # Default mode
@@ -160,9 +138,25 @@ if not flag_jupyter:
         "obs_start_time": float(enkf_params.get("obs_start_time", 1)),
         "localization_flag": bool(enkf_params.get("localization_flag", False)),
         "parallel_flag": enkf_params.get("parallel_flag", "serial"),
-        "n_modeltasks": int(enkf_params.get("n_modeltasks", 1))
+        "n_modeltasks": int(enkf_params.get("n_modeltasks", 1)),
+        "execution_flag": int(enkf_params.get("execution_flag", 0)),
     })
 
+    # --- incase CL args not provided ---
+    if Nens == 2:
+        params["Nens"] = int(float(enkf_params.get("Nens", 2)))
+    
+    if run_flag:
+        execution_flag = params.get("execution_flag")
+
+        if execution_flag == 1:
+            params.update({"sequential_run": True, "default_run": False})
+        elif execution_flag == 2:
+            params.update({"even_distribution": True, "default_run": False})
+        else:
+            params["default_run"] = True
+
+    
     # update for time t
     params["t"] = np.linspace(0, int(float(modeling_params["num_years"])), params["nt"] + 1)
     params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]

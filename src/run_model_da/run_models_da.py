@@ -10,11 +10,13 @@ from _utility_imports import *
 from tqdm import tqdm 
 from scipy.sparse import csr_matrix
 from scipy.sparse import block_diag
-from scipy.ndimage import zoom
 from scipy.stats import multivariate_normal
 from scipy.spatial import distance_matrix
-
+import bigmpi4py as BM # BigMPI for large data transfer and communication
+import gc # garbage collector to free up memory
 import copy
+import numexpr as ne # for fast numerical computations
+
 
 # --- Add required paths ---
 src_dir = os.path.join(project_root, 'src')
@@ -29,25 +31,9 @@ from utils import *
 import re
 from EnKF.python_enkf.EnKF import EnsembleKalmanFilter as EnKF
 from supported_models import SupportedModels
+from localization_func import localization
 
 # ---- Run model with EnKF ----
-# @njit
-# def gaspari_cohn(r):
-#     """Gaspari-Cohn function."""
-#     if type(r) is float:
-#         ra = np.array([r])
-#     else:
-#         ra = r
-#     ra = np.abs(ra)
-#     gp = np.zeros_like(ra)
-#     i=np.where(ra<=1.)[0]
-#     gp[i]=-0.25*ra[i]**5+0.5*ra[i]**4+0.625*ra[i]**3-5./3.*ra[i]**2+1.
-#     i=np.where((ra>1.)*(ra<=2.))[0]
-#     gp[i]=1./12.*ra[i]**5-0.5*ra[i]**4+0.625*ra[i]**3+5./3.*ra[i]**2-5.*ra[i]+4.-2./3./ra[i]
-#     if type(r) is float:
-#         gp = gp[0]
-#     return gp
-
 def gaspari_cohn(r):
     """
     Gaspari-Cohn taper function for localization in EnKF.
@@ -117,25 +103,32 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
         if True:
             Lx, Ly = model_kwargs["Lx"], model_kwargs["Ly"]
             nx, ny = model_kwargs["nx"], model_kwargs["ny"]
-            x_points = np.linspace(0, model_kwargs["Lx"], model_kwargs["nx"]+1)
-            y_points = np.linspace(0, model_kwargs["Ly"], model_kwargs["ny"]+1)
-            grid_x, grid_y = np.meshgrid(x_points, y_points)
 
-            grid_points = np.vstack((grid_x.ravel(), grid_y.ravel())).T
+            # --- call the localization function (with adaptive localization) ---
+            state_size = params["total_state_param_vars"]*hdim
+            adaptive_localization = False   
+            if not adaptive_localization:
+                x_points = np.linspace(0, model_kwargs["Lx"], model_kwargs["nx"]+1)
+                y_points = np.linspace(0, model_kwargs["Ly"], model_kwargs["ny"]+1)
+                grid_x, grid_y = np.meshgrid(x_points, y_points)
 
-            # Adjust grid if n_points != nx * ny (interpolating for 425 points)
-            n_points = hdim
-            missing_rows = n_points - grid_points.shape[0]
-            if missing_rows > 0:
-                last_row = grid_points[-1]  # Get the last available row
-                extrapolated_rows = np.tile(last_row, (missing_rows, 1))  # Repeat last row
-                grid_points = np.vstack([grid_points, extrapolated_rows])  # Append extrapolated rows
+                grid_points = np.vstack((grid_x.ravel(), grid_y.ravel())).T
 
-            dist_matrix = distance_matrix(grid_points, grid_points) 
+                # Adjust grid if n_points != nx * ny (interpolating for 425 points)
+                n_points = hdim
+                missing_rows = n_points - grid_points.shape[0]
+                if missing_rows > 0:
+                    last_row = grid_points[-1]  # Get the last available row
+                    extrapolated_rows = np.tile(last_row, (missing_rows, 1))  # Repeat last row
+                    grid_points = np.vstack([grid_points, extrapolated_rows])  # Append extrapolated rows
 
-            # Normalize distance matrix
-            L = 2400
-            r_matrix = dist_matrix / L
+                dist_matrix = distance_matrix(grid_points, grid_points) 
+
+                # Normalize distance matrix
+                L = 2654
+                r_matrix = dist_matrix / L
+            else:
+                loc_matrix = localization(Lx,Ly,nx, ny, hdim, params["total_state_param_vars"], Nens, state_size)
 
         # dx, dy = model_kwargs["Lx"] / model_kwargs["nx"], model_kwargs["Ly"] / model_kwargs["ny"]  # Grid spacing
 
@@ -604,380 +597,156 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                     for ens in range(ensemble_local.shape[1]):
                         ensemble_local[:, ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_local, nd=nd, Q_err=Q_err, params=params, **model_kwargs)
 
-                    # --- gather local ensembles from all processors ---
-                    gathered_ensemble = ParallelManager().all_gather_data(comm_world, ensemble_local)
+                    # --- compute the ensemble mean ---
+                    ensemble_vec_mean[:,k+1] = ParallelManager().compute_mean(ensemble_local, comm_world)
+
+                    # --- gather all local ensembles from all processors to root---
+                    gathered_ensemble = ParallelManager().gather_data(comm_world, ensemble_local, root=0)
                     if rank_world == 0:
                         ensemble_vec = np.hstack(gathered_ensemble)
                     else:
                         ensemble_vec = np.empty((nd, Nens), dtype=np.float64)
 
-                    # --- broadcast the ensemble to all processors ---
-                    ensemble_vec = ParallelManager().broadcast_data(comm_world, ensemble_vec, root=0)
-
-                    # compute the global ensemble mean
-                    ensemble_vec_mean[:,k+1] = ParallelManager().compute_mean(ensemble_local, comm_world)
-
                     # Analysis step
                     obs_index = model_kwargs["obs_index"]
                     if (km < params["number_obs_instants"]) and (k+1 == obs_index[km]):
-                        # --- compute covariance matrix based on the EnKF type ---
-                        # local_ensemble_centered = ensemble_local -  ensemble_vec_mean[:,k+1]  # Center data
-                        local_ensemble_centered = ensemble_local -  np.mean(ensemble_local, axis=1).reshape(-1,1)  # Center data
-                        if EnKF_flag or DEnKF_flag:
-                            local_cov = local_ensemble_centered @ local_ensemble_centered.T / (Nens - 1)
-                            Cov_model = np.zeros_like(local_cov)
-                            comm_world.Allreduce([local_cov, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
-                        elif EnRSKF_flag or EnTKF_flag:
-                            local_cov = local_ensemble_centered / (Nens - 1)
-                            Cov_model = np.zeros_like(local_ensemble_centered)
-                            comm_world.Allreduce([local_ensemble_centered, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
+                
+                        if rank_world == 0:
+    
+                            H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0]) #TODO: maybe it should be Obs_fun instead of JObs_fun???
+                            h = UtilsFunctions(params, ensemble_vec).Obs_fun # observation operator
 
-                        # --- localization ---
-                        if params["localization_flag"]:
-                            # call the gahpari-cohn localization function
-                            loc_matrix_spatial = gaspari_cohn(r_matrix)
+                            # compute the observation covariance matrix
+                            Cov_obs = params["sig_obs"][k+1]**2 * np.eye(2*params["number_obs_instants"]+1)
 
-                            # expand to full state space
-                            loc_matrix = np.empty_like(Cov_model)
-                            for var_i in range(params["total_state_param_vars"]):
-                                for var_j in range(params["total_state_param_vars"]):
-                                    start_i, start_j = var_i * hdim, var_j * hdim
-                                    loc_matrix[start_i:start_i+hdim, start_j:start_j+hdim] = loc_matrix_spatial
-                            
-                            # apply the localization matrix
-                            Cov_model = loc_matrix * Cov_model
+                            # --- vector of measurements
+                            d = UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km])
 
-                            # inflate the top-left (smb h) and bottom-right (h smb) blocks of the covariance matrix 
-                            state_block_size = num_state_vars*hdim
-                            h_smb_block = Cov_model[:hdim,state_block_size:]
-                            smb_h_block = Cov_model[state_block_size:,:hdim]
-
-                            # apply the inflation factor
-                            params["inflation_factor"] = 2.0
-                            smb_h_block = UtilsFunctions(params, smb_h_block).inflate_ensemble(in_place=True)
-                            h_smb_block = UtilsFunctions(params, h_smb_block).inflate_ensemble(in_place=True)
-
-                            # update the covariance matrix
-                            Cov_model[:hdim,state_block_size:] = h_smb_block
-                            Cov_model[state_block_size:,:hdim] = smb_h_block
-                            
-                            
-                            # if EnKF_flag or DEnKF_flag:
+                            if EnKF_flag:
+                                Eta = np.zeros((d.shape[0], Nens)) # mxNens, ensemble pertubations
+                                D   = np.zeros_like(Eta) # mxNens #virtual observations
+                                HA  = np.zeros_like(D)
+                                for ens in range(Nens):
+                                    Eta[:,ens] = multivariate_normal.rvs(mean=np.zeros(d.shape[0]), cov=Cov_obs) 
+                                    D[:,ens] = d + Eta[:,ens]
+                                    HA[:,ens] = h(ensemble_vec[:,ens])
                                 
-                            # elif EnRSKF_flag or EnTKF_flag:
+                                # --- compute the innovations D` = D-HA
+                                Dprime = D - HA # mxNens
+
+                                # --- compute HAbar
+                                HAbar = np.mean(HA, axis=1) # mx1
+                                # --- compute HAprime
+                                HAprime = HA - HAbar.reshape(-1,1) # mxNens (requires H to be linear)
                                 
-                        # Call the EnKF class for the analysis step
-                        # mpi_start = MPI.Wtime()
+                                # Aprime = ensemble_vec@(np.eye(Nens) - one_N) # mxNens
+                                # one_N = np.ones((Nens,Nens))/Nens
+                                # HAprime= HA@(np.eye(Nens) - one_N) # mxNens
 
+                                # get the min(m,Nens)
+                                m_obs = d.shape[0]
+                                nrmin = min(m_obs, Nens)
 
-                        # if True:
-                        analysis  = EnKF(Observation_vec=  UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km]), 
-                                        Cov_obs=params["sig_obs"][k+1]**2 * np.eye(2*params["number_obs_instants"]+1), \
-                                        Cov_model= Cov_model, \
-                                        Observation_function=UtilsFunctions(params, ensemble_vec).Obs_fun, \
-                                        Obs_Jacobian=UtilsFunctions(params, ensemble_vec).JObs_fun, \
-                                        parameters=  params,\
-                                        parallel_flag=   parallel_flag)
-                        
-                        # Compute the analysis ensemble
-                        
-                        if EnKF_flag:
-                            ensemble_vec, Cov_model = analysis.EnKF_Analysis(ensemble_vec)
-                        elif DEnKF_flag:
-                            ensemble_vec, Cov_model = analysis.DEnKF_Analysis(ensemble_vec)
-                        elif EnRSKF_flag:
-                            ensemble_vec, Cov_model = analysis.EnRSKF_Analysis(ensemble_vec)
-                        elif EnTKF_flag:
-                            ensemble_vec, Cov_model = analysis.EnTKF_Analysis(ensemble_vec)
+                                # --- compute HA' + eta
+                                HAprime_eta = HAprime + Eta
+
+                                # --- compute the SVD of HA' + eta
+                                U, sig, _ = np.linalg.svd(HAprime_eta, full_matrices=False)
+
+                                # --- convert s to eigenvalues
+                                sig = sig**2
+                                # for i in range(nrmin):
+                                #     sig[i] = sig[i]**2
+                                
+                                # ---compute the number of significant eigenvalues
+                                sigsum = np.sum(sig[:nrmin])  # Compute total sum of the first `nrmin` eigenvalues
+                                sigsum1 = 0.0
+                                nrsigma = 0
+
+                                for i in range(nrmin):
+                                    if sigsum1 / sigsum < 0.999:
+                                        nrsigma += 1
+                                        sigsum1 += sig[i]
+                                        sig[i] = 1.0 / sig[i]  # Inverse of eigenvalue
+                                    else:
+                                        sig[i:nrmin] = 0.0  # Set remaining eigenvalues to 0
+                                        break  # Exit the loop
+                                
+                                # compute X1 = sig*UT #Nens x m_obs
+                                X1 = np.empty((nrmin, m_obs))
+                                for j in range(m_obs):
+                                    for i in range(nrmin):
+                                        X1[i,j] =sig[i]*U[j,i]
+                                
+                                # compute X2 = X1*Dprime # Nens x Nens
+                                X2 = np.dot(X1, Dprime)
+                                del Cov_obs, sig, X1, Dprime; gc.collect()
+                                
+                                # print(f"Rank: {rank_world} X2 shape: {X2.shape}")
+                                #  compute X3 = U*X2 # m_obs x Nens
+                                X3 = np.dot(U, X2)
+
+                                # print(f"Rank: {rank_world} X3 shape: {X3.shape}")
+                                # compute X4 = (HAprime.T)*X3 # Nens x Nens
+                                X4 = np.dot(HAprime.T, X3)
+                                del X2, X3, U, HAprime; gc.collect()
+                                
+                                # print(f"Rank: {rank_world} X4 shape: {X4.shape}")
+                                # compute X5 = X4 + I
+                                X5 = X4 + np.eye(Nens)
+                                del X4; gc.collect()
+
+                                y_i = np.sum(X5, axis=1)
+                                ensemble_vec_mean[:,k+1] = (1/Nens)*(ensemble_vec @ y_i.reshape(-1,1)).ravel()
+                                
                         else:
-                            raise ValueError("Filter type not supported")
+                            X5 = np.empty((Nens, Nens))
 
-                        ensemble_vec_mean[:,k+1] = np.mean(ensemble_vec, axis=1)
+                        # clean the memory
+                        del ensemble_local, gathered_ensemble; gc.collect()
 
-                        # mpi_stop = MPI.Wtime()
+                        # Broadcast X5 to all processors
+                        X5 = BM.bcast(X5, comm_world)
+                        # the sum of each column of X5 should be equal to 1
+                        # print(f"Rank: {rank_world} columns of X5: {bd_arr}")
+                        # print(f"Rank: {rank_world} column sum of X5: {np.sum(X5, axis=0)}")
 
-                        # # print(f"Rank: {rank}, Time taken for analysis step: {mpi_stop - mpi_start}")
-                        # # get total time taken for the analysis step
-                        # total_time = comm_world.reduce(mpi_stop - mpi_start, op=MPI.SUM, root=0)
-                        # if rank_world == 0:
-                        #     print(f"Total time taken for analysis step: {total_time/60} minutes")
+                        # --- scatter ensemble_vec to all processors ---
+                        scatter_ensemble = BM.scatter(ensemble_vec, comm_world)
 
+                        # do the ensemble analysis update: A_j = Fj*X5 
+                        analysis_vec = np.dot(scatter_ensemble, X5)
+
+                        # gather from all processors
+                        ensemble_vec = BM.allgather(analysis_vec, comm_world)
+    
+                        # clean the memory
+                        del scatter_ensemble, analysis_vec; gc.collect()
 
                         # update the ensemble with observations instants
                         km += 1
 
                         # inflate the ensemble
-                        params["inflation_factor"] = inflation_factor
+                        # params["inflation_factor"] = inflation_factor
                         ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
                         # ensemble_vec = UtilsFunctions(params, ensemble_vec)._inflate_ensemble()
                     
                         # update the local ensemble
                         ensemble_local = copy.deepcopy(ensemble_vec[:,start:stop])
-                        
-                    # update ensemble
 
                     # Save the ensemble
-                    ensemble_vec_full[:,:,k+1] = ensemble_vec
+                    if rank_world == 0:
+                        ensemble_vec_full[:,:,k+1] = ensemble_vec
+                    else:
+                        ensemble_vec_full = np.empty((nd, Nens, params["nt"]+1), dtype=np.float64)
+
+                    # free up memory
+                    del ensemble_vec; gc.collect()
                 else:
                     raise ValueError("Nens must be divisible by size_world and greater or equal to size_world. size_world must be a power of 2")
 
-            
-            # comm.Barrier()
-            # print(f"\nranks: {rank}, size: {size}\n")
-            if False:
-                for ens in range(ensemble_local.shape[1]):
-                        ensemble_local[:, ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_local, nd=nd, Q_err=Q_err, params=params, **model_kwargs)
-
-            # # if parallel_manager.memory_usage(nd,Nens,8) > 8:
-            # if True:
-                
-                # --- gather local ensembles from all processors ---
-                gathered_ensemble = parallel_manager.all_gather_data(comm_model, ensemble_local)
-                if rank_model == 0:
-                    ensemble_vec = np.hstack(gathered_ensemble)
-                else:
-                    ensemble_vec = np.empty((nd, Nens), dtype=np.float64)
-
-                # --- broadcast the ensemble to all processors ---
-                ensemble_vec = parallel_manager.broadcast_data(comm_model, ensemble_vec, root=0)
-
-                # compute the global ensemble mean
-                ensemble_vec_mean[:,k+1] = parallel_manager.compute_mean(ensemble_local, comm_filter)
-
-                # Analysis step
-                obs_index = model_kwargs["obs_index"]
-                if (km < params["number_obs_instants"]) and (k+1 == obs_index[km]):
-                    # --- compute covariance matrix based on the EnKF type ---
-                    # local_ensemble_centered = ensemble_local -  ensemble_vec_mean[:,k+1]  # Center data
-                    local_ensemble_centered = ensemble_local -  np.mean(ensemble_local, axis=1).reshape(-1,1)  # Center data
-                    if EnKF_flag or DEnKF_flag:
-                        local_cov = local_ensemble_centered @ local_ensemble_centered.T / (Nens - 1)
-                        Cov_model = np.zeros_like(local_cov)
-                        comm_filter.Allreduce([local_cov, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
-                    elif EnRSKF_flag or EnTKF_flag:
-                        Cov_model = np.zeros_like(local_ensemble_centered)
-                        comm_filter.Allreduce([local_ensemble_centered, MPI.DOUBLE], [Cov_model, MPI.DOUBLE], op=MPI.SUM)
-
-                    # method 3
-                    if params["localization_flag"]:
-                        # try with the localization matrix
-                        cutoff_distance = 6000
-
-                        # rho = np.zeros_like(Cov_model)
-                        rho = np.ones_like(Cov_model)
-                        # for j in range(Cov_model.shape[0]):
-                        #     for i in range(Cov_model.shape[1]):
-                        #         rad_x = np.abs(X[j] - X[i])
-                        #         rad_y = np.abs(Y[j] - Y[i])
-                        #         # rad_x = np.abs(grid_x[j] - grid_x[i])
-                        #         # rad_y = np.abs(grid_y[j] - grid_y[i])
-                        #         rad = np.sqrt(rad_x**2 + rad_y**2)
-                        #         # print(f"Rad: {rad}")
-                        #         # rad = np.array([rad/cutoff_distance])[0]
-                        #         rad = rad/cutoff_distance
-                        #         print(f"Rad: {rad}")
-                        #         rho[j,i] = gaspari_cohn(rad)
-
-                        # Cov_model = np.multiply(Cov_model, rho)
-                        Cov_model = rho * Cov_model
-                        
-
-                        if False:
-                            # find observation locations in the grid
-                            obs_function = UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km])
-                            # randomly pick an observation locatios
-                            print(f"Observation function : {obs_function}")
-                            # compute distances
-                            dist_x = np.abs(X - X[obs_i,obs_j])
-                            dist_y = np.abs(Y - Y[obs_i,obs_j])
-
-                            # comopute the eculedian distance
-                            dist = np.sqrt(dist_x**2 + dist_y**2)
-
-                            #cutoff distance
-                            cutoff_distance = 6000
-
-                            # compute the taper function
-                            taper = UtilsFunctions(params, ensemble_vec).gaspari_cohn(dist/cutoff_distance)
-
-                            # apply the taper function to the covariance matrix
-                            Cov_model = np.multiply(Cov_model, taper)
-
-                        # sate block size
-                        # ---------------------------------------------
-                        state_block_size = num_state_vars*hdim
-                        # radius = 4000
-                        # radius = UtilsFunctions(params, ensemble_vec[:state_block_size,:]).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=1.5, method='variance')
-                        # localization_weights = UtilsFunctions(params, ensemble_vec[:state_block_size,:]).create_tapering_matrix(grid_x, grid_y, radius)
-                        # ---------------------------------------------
-                        # radius = UtilsFunctions(params, ensemble_vec[:,:]).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=2.0, method='correlation')
-                        # localization_weights = UtilsFunctions(params, ensemble_vec[:,:]).create_tapering_matrix(grid_x, grid_y, radius)
-                        if EnKF_flag or DEnKF_flag:
-                            # ------------------------------
-                            # localization_weights_resized = np.eye(Cov_model[:state_block_size,:state_block_size].shape[0])
-                            # localization_weights_resized[:localization_weights.shape[0], :localization_weights.shape[1]] = localization_weights
-                            # Cov_model[:state_block_size, :state_block_size] *= localization_weights_resized 
-
-                            # check if maximum value of smb is greater than 1.25*smb_obs
-                            if False: 
-                                smb = ensemble_vec[state_block_size:,:]
-                                smb_crit = 1.05*np.max(np.abs(hu_obs[state_block_size:,km]))
-                                smb_crit2 = np.max(Cov_model[567:,567:])
-                                smb_cov = np.cov(smb_init)
-                                smb_flag1 = smb_crit < np.max(np.abs(smb))
-                                smb_flag2 = smb_crit2 > 1.02*np.max(smb_cov)
-                                if smb_flag2:
-                                    # force the smb to be 5% 0f the smb_obs
-                                    # t = model_kwargs["t"]
-                                    # ensemble_vec[state_block_size:,:] = np.min(smb_init, smb_init + (smb-smb_init)*t[k]/(t[params["nt"]-1] - t[0]))
-                                    ensemble_vec[state_block_size:,:] = smb_init
-                            # ------------------------------
-                            # radius = UtilsFunctions(params, ensemble_vec).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=2.0, method='correlation')
-                            # print(f"Adaptive localization radius: {radius}")
-                            # localization_weights = UtilsFunctions(params, ensemble_vec).create_tapering_matrix(grid_x, grid_y, radius)
-                            # localization_weights_resized = np.eye(Cov_model.shape[0])
-                            # localization_weights_resized[:localization_weights.shape[0], :localization_weights.shape[1]] = localization_weights
-
-                            # # Convert to sparse representation
-                            # localization_weights = csr_matrix(localization_weights_resized)
-
-                            # # Apply sparse multiplication
-                            # Cov_model = csr_matrix(Cov_model).multiply(localization_weights)
-                        elif EnRSKF_flag or EnTKF_flag:
-                            localization_weights_resized = np.eye(Cov_model[:state_block_size, :].shape[0])
-                            print("localization_weights:", localization_weights)
-                            localization_weights_resized[:localization_weights.shape[0], :Nens] = localization_weights
-                            Cov_model[:state_block_size, :] *= localization_weights_resized
-
-                    # Call the EnKF class for the analysis step
-                    mpi_start = MPI.Wtime()
-                    if False:
-                        # parallel kalman gain for EnKF and DEnKF
-                        if EnKF_flag or DEnKF_flag:
-                            # _kalman_gain = Cov_model @ Obs_Jacobian.T@ inv(Obs_Jacobian @ Cov_model @ Obs_Jacobian + Cov_obs)
-                            # get the size of observations
-                            m = hu_obs[:,km].shape[0]
-                            # compute the anomaly matrix
-                            ensemble_anomaly = ensemble_vec - np.tile(ensemble_vec_mean[:,k+1].reshape(-1,1),Nens)
-                            # get local chunks of the anomaly matrix
-                            anomaly_local = ensemble_anomaly[start_vec:stop_vec,:]
-
-                            # compute the local part of covariance matrix (H@X)@(H@X)^T
-                            Obs_Jacobian = UtilsFunctions(params, ensemble_vec).JObs_fun
-                            H = Obs_Jacobian(Cov_model.shape[0])
-                            HXlocal = H @ anomaly_local   # (m, Nens) HX
-                            C_local = HXlocal @ HXlocal.T # (m, m) HPH^T
-                            # reduce on all processors
-                            C_global = np.zeros_like(C_local)
-                            comm_filter.Allreduce(C_local, C_global, op=MPI.SUM)
-
-                            # add observation noise covariance
-                            C_global /= (Nens - 1)
-                            Cov_obs = params["sig_obs"][k+1]**2 * np.eye(2*params["number_obs_instants"]+1) # (m, m) R
-                            C_global += Cov_obs
-                            
-                            # get the inverse of C_global
-                            inv_C_global = np.linalg.inv(C_global)
-
-                            #  compute the local part of the Kalman gain (X_local @ (H @ X).T) @ C_inv
-                            PHT_local = anomaly_local@HXlocal.T 
-                            K_local = PHT_local @ inv_C_global
-
-                            # gather the local Kalman gain on all processors (use Allgather)
-                            K_global = parallel_manager.all_gather_data(comm_filter, K_local)
-
-                            # check if kalman gain is correct
-                            print(f"Rank: {rank_filter}, Kalman gain shape: {K_global.shape}")
-
-                            # -- Enkf Analysis step --
-                            if EnKF_flag:
-                                # virtual observations
-                                virtual_obs_loc = np.zeros((m, (stop_filter-start_filter)))
-                                ensemble_analysis_loc = np.zeros_like(ensemble_filter_local)
-                                for ens in range(start_filter, stop_filter):
-                                    # get the virtual observation
-                                    virtual_obs_loc[:,ens] = hu_obs[:,km] + multivariate_normal.rvs(mean=np.zeros(m), cov=Cov_obs)
-                                    # compute the analysis ensemble
-                                    ensemble_analysis_loc[:,ens] = ensemble_vec[:,ens] + K_global @ (virtual_obs_loc[:,ens] - H @ ensemble_vec[:,ens])
-
-                                # compute the analysis ensemble mean
-                                ensemble_vec_mean[:,k+1] = parallel_manager.compute_mean(ensemble_analysis_loc, comm_filter)
-                                
-                                # gather the analysis ensemble on all processors
-                                ensemble_analysis = parallel_manager.all_gather_data(comm_filter, ensemble_analysis_loc)
-                                if rank_filter == 0:
-                                    ensemble_vec = np.hstack(ensemble_analysis)
-                                else:
-                                    ensemble_vec = np.empty((nd, Nens), dtype=np.float64)
-                                # broadcast the ensemble to all processors
-                                ensemble_vec = parallel_manager.broadcast_data(comm_filter, ensemble_vec, root=0)
-
-
-                    # ----------------------------------------------
-                    if True:
-                        analysis  = EnKF(Observation_vec=  UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km]), 
-                                        Cov_obs=params["sig_obs"][k+1]**2 * np.eye(2*params["number_obs_instants"]+1), \
-                                        Cov_model= Cov_model, \
-                                        Observation_function=UtilsFunctions(params, ensemble_vec).Obs_fun, \
-                                        Obs_Jacobian=UtilsFunctions(params, ensemble_vec).JObs_fun, \
-                                        parameters=  params,\
-                                        parallel_flag=   parallel_flag)
-                        
-                        # Compute the analysis ensemble
-                        
-                        if EnKF_flag:
-                            ensemble_vec, Cov_model = analysis.EnKF_Analysis(ensemble_vec)
-                        elif DEnKF_flag:
-                            ensemble_vec, Cov_model = analysis.DEnKF_Analysis(ensemble_vec)
-                        elif EnRSKF_flag:
-                            ensemble_vec, Cov_model = analysis.EnRSKF_Analysis(ensemble_vec)
-                        elif EnTKF_flag:
-                            ensemble_vec, Cov_model = analysis.EnTKF_Analysis(ensemble_vec)
-                        else:
-                            raise ValueError("Filter type not supported")
-
-                    ensemble_vec_mean[:,k+1] = np.mean(ensemble_vec, axis=1)
-
-                    mpi_stop = MPI.Wtime()
-
-                    # print(f"Rank: {rank}, Time taken for analysis step: {mpi_stop - mpi_start}")
-                    # get total time taken for the analysis step
-                    total_time = comm_filter.reduce(mpi_stop - mpi_start, op=MPI.SUM, root=0)
-                    if rank_filter == 0:
-                        print(f"Total time taken for analysis step: {total_time/60} minutes")
-
-
-                    # update the ensemble with observations instants
-                    km += 1
-
-                    # inflate the ensemble
-                    ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
-                    # ensemble_vec = UtilsFunctions(params, ensemble_vec)._inflate_ensemble()
-                
-                    # update the local ensemble
-                    ensemble_local = copy.deepcopy(ensemble_vec[:,start_model:stop_model])
-                    
-                    # update ensemble
-
-                # Save the ensemble
-                ensemble_vec_full[:,:,k+1] = ensemble_vec
-
-            # else:
-            #     gathered_ensemble = parallel_manager.all_gather_data(comm, ensemble_local)
-                
-            #     if rank == 0:
-            #         ensemble_vec = np.hstack(gathered_ensemble)
-            #         ensemble_vec_mean[:,k+1] = np.mean(ensemble_vec, axis=1)
-            #     else:
-            #         ensemble_vec = np.empty((nd, Nens), dtype=np.float64)
-            #         ensemble_vec_mean = np.empty((nd, params["nt"]+1), dtype=np.float64)
-
-            #     ensemble_vec = parallel_manager.broadcast_data(comm, ensemble_vec, root=0)
-            #     ensemble_vec_mean = parallel_manager.broadcast_data(comm, ensemble_vec_mean, root=0)
-
-            
-                
-         
+            # -------------------------------------------------- end of case 4 -------------------------------------------------    
+        #  ====== Serial run ======
         else:
             ensemble_vec = EnKFclass.forecast_step(ensemble_vec, \
                                                model_module.forecast_step_single, \
@@ -998,105 +767,42 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                 elif EnRSKF_flag or EnTKF_flag:
                     Cov_model = 1/(Nens-1) * diff 
 
-                print(f"[DEBUG] diff shape: {diff.shape}") # Debugging
-                print(f"[Debug] ensemble_vec_mean shape: {ensemble_vec_mean[:,k+1].shape}") # Debugging
-                print(f"[DEBUG] Cov_model max: {np.max(Cov_model[567:,567:])}") # Debugging
+                # --- localization ---
+                if params["localization_flag"]:
+                    if not adaptive_localization:
+                        # call the gahpari-cohn localization function
+                        loc_matrix_spatial = gaspari_cohn(r_matrix)
+
+                        # expand to full state space
+                        loc_matrix = np.empty_like(Cov_model)
+                        for var_i in range(params["total_state_param_vars"]):
+                            for var_j in range(params["total_state_param_vars"]):
+                                start_i, start_j = var_i * hdim, var_j * hdim
+                                loc_matrix[start_i:start_i+hdim, start_j:start_j+hdim] = loc_matrix_spatial
+                        
+                        # apply the localization matrix
+                        # Cov_model = loc_matrix * Cov_model
+                        
+                    Cov_model = loc_matrix * Cov_model
+
+                    # inflate the top-left (smb h) and bottom-right (h smb) blocks of the covariance matrix 
+                    state_block_size = num_state_vars*hdim
+                    h_smb_block = Cov_model[:hdim,state_block_size:]
+                    smb_h_block = Cov_model[state_block_size:,:hdim]
+
+                    # apply the inflation factor
+                    params["inflation_factor"] = 1.2
+                    smb_h_block = UtilsFunctions(params, smb_h_block).inflate_ensemble(in_place=True)
+                    h_smb_block = UtilsFunctions(params, h_smb_block).inflate_ensemble(in_place=True)
+
+                    # update the covariance matrix
+                    Cov_model[:hdim,state_block_size:] = h_smb_block
+                    Cov_model[state_block_size:,:hdim] = smb_h_block
 
                 # check if params["sig_obs"] is a scalar
                 if isinstance(params["sig_obs"], (int, float)):
                     params["sig_obs"] = np.ones(params["nt"]+1) * params["sig_obs"]
 
-                # --- Addaptive localization
-                # compute the distance between observation and the ensemble members
-                # dist = np.linalg.norm(ensemble_vec - np.tile(hu_obs[:,km].reshape(-1,1),N), axis=1)
-                    
-                # get the localization weights
-                # localization_weights = UtilsFunctions(params, ensemble_vec)._adaptive_localization(dist, \
-                                                    # ensemble_init=ensemble_init, loc_type="Gaspari-Cohn")
-
-                # method 2
-                # get the cut off distance between grid points
-                # cutoff_distance = np.linspace(0, 5, Cov_model.shape[0])
-                # localization_weights = UtilsFunctions(params, ensemble_vec)._adaptive_localization_v2(cutoff_distance)
-                # print(localization_weights)
-                # get the shur product of the covariance matrix and the localization matrix
-                # Cov_model = np.multiply(Cov_model, localization_weights)
-
-                # method 3
-                if params["localization_flag"]:
-                    
-                    # sate block size
-                    # ---------------------------------------------
-                    state_block_size = num_state_vars*hdim
-                    # radius = 1.5
-                    radius = UtilsFunctions(params, ensemble_vec[:state_block_size,:]).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=1.5, method='variance')
-                    localization_weights = UtilsFunctions(params, ensemble_vec[:state_block_size,:]).create_tapering_matrix(grid_x, grid_y, radius)
-                    # ---------------------------------------------
-                    # radius = UtilsFunctions(params, ensemble_vec[:,:]).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=2.0, method='correlation')
-                    # localization_weights = UtilsFunctions(params, ensemble_vec[:,:]).create_tapering_matrix(grid_x, grid_y, radius)
-                    if EnKF_flag or DEnKF_flag:
-                        # ------------------------------
-                        localization_weights_resized = np.eye(Cov_model[:state_block_size,:state_block_size].shape[0])
-                        localization_weights_resized[:localization_weights.shape[0], :localization_weights.shape[1]] = localization_weights
-                        Cov_model[:state_block_size, :state_block_size] *= localization_weights_resized 
-
-                        # check if maximum value of smb is greater than 1.25*smb_obs 
-                        smb = ensemble_vec[state_block_size:,:]
-                        smb_crit = 1.05*np.max(np.abs(hu_obs[state_block_size:,km]))
-                        smb_crit2 = np.max(Cov_model[567:,567:])
-                        smb_cov = np.cov(smb_init)
-                        smb_flag1 = smb_crit < np.max(np.abs(smb))
-                        smb_flag2 = smb_crit2 > 1.02*np.max(smb_cov)
-                        if smb_flag2:
-                            # force the smb to be 5% 0f the smb_obs
-                            # t = model_kwargs["t"]
-                            # ensemble_vec[state_block_size:,:] = np.min(smb_init, smb_init + (smb-smb_init)*t[k]/(t[params["nt"]-1] - t[0]))
-                            ensemble_vec[state_block_size:,:] = smb_init
-
-                        # ensemble_vec = UtilsFunctions(params, ensemble_vec).compute_smb_mask(k=k, km=km, state_block_size= state_block_size, hu_obs=hu_obs, smb_init=smb_init, model_kwargs=model_kwargs)
-
-                        # smb localization
-                        # compute the cross correlation between the state variables and the smb
-                        # corr =np.corrcoef(ensemble_vec[:,:])
-                        # #  set a threshold for the correlation coefficient
-                        # corr_threshold = 0.2
-                        # localized_mask = np.abs(corr) > corr_threshold
-                        # Cov_model *= localized_mask
-
-
-                        # ------------------------------
-                        # radius = UtilsFunctions(params, ensemble_vec).compute_adaptive_localization_radius(grid_x, grid_y, base_radius=2.0, method='correlation')
-                        # # print(f"Adaptive localization radius: {radius}")
-                        # localization_weights = UtilsFunctions(params, ensemble_vec).create_tapering_matrix(grid_x, grid_y, radius)
-                        # localization_weights_resized = np.eye(Cov_model.shape[0])
-                        # localization_weights_resized[:localization_weights.shape[0], :localization_weights.shape[1]] = localization_weights
-
-                        # # Convert to sparse representation
-                        # localization_weights = csr_matrix(localization_weights_resized)
-
-                        # # Apply sparse multiplication
-                        # Cov_model = csr_matrix(Cov_model).multiply(localization_weights)
-                    elif EnRSKF_flag or EnTKF_flag:
-                        localization_weights_resized = np.eye(Cov_model[:state_block_size, :].shape[0])
-                        print("localization_weights:", localization_weights)
-                        localization_weights_resized[:localization_weights.shape[0], :Nens] = localization_weights
-                        Cov_model[:state_block_size, :] *= localization_weights_resized
-
-                    # Convert to sparse representation
-                    # localization_weights = csr_matrix(localization_weights_resized)
-                    # localization_weights = localization_weights_resized
-
-                    # print("Cov_model shape:", Cov_model.shape)
-                    # print("state_block_size:", state_block_size)
-                    # print("localization_weights_resized shape:", localization_weights_resized.shape)
-
-
-                    # Apply localization to state covariance only
-                    # Cov_model[:3*hdim, :3*hdim] = csr_matrix(Cov_model[:3*hdim, :3*hdim]).multiply(localization_weights)
-                    # Cov_model[:state_block_size, :state_block_size] *= localization_weights_resized 
-
-                # Lets no observe the smb (forece entries to [state_block_size:] to zero)
-                # hu_obs[state_block_size:, km] = 0
 
                 # Call the EnKF class for the analysis step
                 analysis  = EnKF(Observation_vec=  UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km]), 
@@ -1120,19 +826,6 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                     raise ValueError("Filter type not supported")
 
                 ensemble_vec_mean[:,k+1] = np.mean(ensemble_vec, axis=1)
-
-                # Adaptive localization
-                # radius = 2
-                # calculate the correlation coefficient with the background ensembles
-                # R = (np.corrcoef(ensemble_vec))**2
-                # #  compute the euclidean distance between the grid points
-                # cutoff_distance = np.linspace(0, 5e3, Cov_model.shape[0])
-                # #  the distance at which the correlation coefficient is less than 1/sqrt(N-1) is the radius
-                # # radius = 
-                # method = "Gaspari-Cohn"
-                # localization_weights = localization_matrix(radius, cutoff_distance, method)
-                # # perform a schur product to localize the covariance matrix
-                # Cov_model = np.multiply(Cov_model, localization_weights)
                 
                 # update the ensemble with observations instants
                 km += 1
