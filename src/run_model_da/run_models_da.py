@@ -637,10 +637,11 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                                 # --- compute HAbar
                                 HAbar = np.mean(HA, axis=1) # mx1
                                 # --- compute HAprime
-                                # HAprime = HA - HAbar.reshape(-1,1) # mxNens (requires H to be linear)
-                                one_N = np.ones((Nens,Nens))/Nens
+                                HAprime = HA - HAbar.reshape(-1,1) # mxNens (requires H to be linear)
+                                
                                 # Aprime = ensemble_vec@(np.eye(Nens) - one_N) # mxNens
-                                HAprime= HA@(np.eye(Nens) - one_N) # mxNens
+                                # one_N = np.ones((Nens,Nens))/Nens
+                                # HAprime= HA@(np.eye(Nens) - one_N) # mxNens
 
                                 # get the min(m,Nens)
                                 m_obs = d.shape[0]
@@ -679,7 +680,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                                 
                                 # compute X2 = X1*Dprime # Nens x Nens
                                 X2 = np.dot(X1, Dprime)
-                                del sig, X1, Dprime; gc.collect()
+                                del Cov_obs, sig, X1, Dprime; gc.collect()
                                 
                                 # print(f"Rank: {rank_world} X2 shape: {X2.shape}")
                                 #  compute X3 = U*X2 # m_obs x Nens
@@ -708,7 +709,7 @@ def run_model_with_filter(model=None, filter_type=None, *da_args, **model_kwargs
                         X5 = BM.bcast(X5, comm_world)
                         # the sum of each column of X5 should be equal to 1
                         # print(f"Rank: {rank_world} columns of X5: {bd_arr}")
-                        # print(f"Rank: {rank_world} column sum of X5: {np.sum(bd_arr, axis=0)}")
+                        # print(f"Rank: {rank_world} column sum of X5: {np.sum(X5, axis=0)}")
 
                         # --- scatter ensemble_vec to all processors ---
                         scatter_ensemble = BM.scatter(ensemble_vec, comm_world)
