@@ -2,8 +2,10 @@ physical-parameters:
   # Domain parameters
   Lx: 50e2        # (m)
   Ly: 12e2        # (m)
+
   nx: 12         # number of elements in the x-direction
   ny: 8        # number of elements in the y-direction
+
   degree: 2       # degree of the polynomial basis functions
 
   # Bedrock slopes 
@@ -35,9 +37,9 @@ enkf-parameters:
   obs_max_time: 32            # maximum time for observations
   obs_start_time: 2             # start time for observations
 
-  num_state_vars: 3       # number of state variables  [h,u,v]
-  num_param_vars: 1       # number of parameter variables [smb]
-
+  num_state_vars: 3       # number of state variables  [h,u,v] in [h,u,v,smb]
+  num_param_vars: 1       # number of parameter variables [smb] in [h,u,v,smb]
+  
   # Statistical parameters
   sig_model: 0.1          # model error standard deviation
   sig_obs: 0.1           # observation error standard deviation
@@ -46,6 +48,7 @@ enkf-parameters:
   seed: 1                 # seed for random number generator
   inflation_factor: 1.02          # inflation factor
   localization_flag: False      # localization flag: True, False
+
 
   # estimation flags
   joint_estimation: True # joint estimation flag: True, False
