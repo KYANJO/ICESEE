@@ -8,6 +8,7 @@
 import sys
 import os
 import numpy as np
+import bigmpi4py as BM # BigMPI for large data transfer and communication
 
 # --- Configuration ---
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -61,28 +62,41 @@ for i in range(len(kwargs["obs_index"])):
     sig_obs[kwargs["obs_index"][i]] = params["sig_obs"]
 params["sig_obs"] = sig_obs
 
-# --- Generate True and Nurged States ---
-PETSc.Sys.Print("Generating true state ...")
-statevec_true = generate_true_state(
-    np.zeros([params["nd"], params["nt"] + 1]), 
-    params,  
-    **kwargs  
-)
+if rank == 0:
+    # --- Generate True and Nurged States ---
+    PETSc.Sys.Print("Generating true state ...")
+    statevec_true = generate_true_state(
+        np.zeros([params["nd"], params["nt"] + 1]), 
+        params,  
+        **kwargs  
+    )
 
 
-PETSc.Sys.Print("Generating nurged state ...")
-kwargs["a"] = a_p # Update accumulation with nurged accumulation
-statevec_nurged = generate_nurged_state(
-    np.zeros([params["nd"], params["nt"] + 1]), 
-    params, 
-    **kwargs  
-)
+    PETSc.Sys.Print("Generating nurged state ...")
+    kwargs["a"] = a_p # Update accumulation with nurged accumulation
+    statevec_nurged = generate_nurged_state(
+        np.zeros([params["nd"], params["nt"] + 1]), 
+        params, 
+        **kwargs  
+    )
+else:
+    statevec_true = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
+    statevec_nurged = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
 
+# Bcast the true and nurged states
+comm.Bcast(statevec_true, root=0)
+comm.Bcast(statevec_nurged, root=0)
+
+# --- Synthetic Observations ---
 if params["even_distribution"]:
-    # --- Synthetic Observations ---
-    PETSc.Sys.Print("Generating synthetic observations ...")
-    utils_funs = UtilsFunctions(params, statevec_true)
-    hu_obs = utils_funs._create_synthetic_observations(statevec_true,**kwargs)
+    if rank == 0:
+        # --- Synthetic Observations ---
+        PETSc.Sys.Print("Generating synthetic observations ...")
+        utils_funs = UtilsFunctions(params, statevec_true)
+        hu_obs = utils_funs._create_synthetic_observations(statevec_true,**kwargs)
+    else:
+        hu_obs = np.empty((params["nd"],params["number_obs_instants"]),dtype=np.float64)
+    comm.Bcast(hu_obs, root=0)
 else:
     # gather the true and nurged states from all the processors
     statevec_true = comm.allgather(statevec_true)
@@ -117,14 +131,26 @@ else:
     comm.Bcast(statevec_true, root=0)
     comm.Bcast(statevec_nurged, root=0)
 
-PETSc.Sys.Print("Initializing the ensemble ...")
-statevec_bg, statevec_ens, statevec_ens_mean, statevec_ens_full = initialize_ensemble(
-    np.zeros([params["nd"], params["nt"] + 1]),
-    np.zeros([params["nd"], params["Nens"]]),
-    np.zeros([params["nd"], params["nt"] + 1]),
-    np.zeros([params["nd"], params["Nens"], params["nt"] + 1]),
-    params, **kwargs
-)
+if rank == 0:
+    PETSc.Sys.Print("Initializing the ensemble ...")
+    statevec_bg, statevec_ens, statevec_ens_mean, statevec_ens_full = initialize_ensemble(
+        np.zeros([params["nd"], params["nt"] + 1]),
+        np.zeros([params["nd"], params["Nens"]]),
+        np.zeros([params["nd"], params["nt"] + 1]),
+        np.zeros([params["nd"], params["Nens"], params["nt"] + 1]),
+        params, **kwargs
+    )
+else:
+    statevec_bg = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
+    statevec_ens = np.empty((params["nd"],params["Nens"]),dtype=np.float64)
+    statevec_ens_mean = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
+    statevec_ens_full = np.empty((params["nd"],params["Nens"],params["nt"]+1),dtype=np.float64)
+
+# Bcast the ensemble
+comm.Bcast(statevec_bg, root=0)
+comm.Bcast(statevec_ens, root=0)
+comm.Bcast(statevec_ens_mean, root=0)
+comm.Bcast(statevec_ens_full, root=0)
 
 # --- Run Data Assimilation ---
 PETSc.Sys.Print("Running the model with Data Assimilation ...")
@@ -145,37 +171,33 @@ da_args = [
     enkf_params["commandlinerun"],
 ]
 
-if True:
-    statevec_ens_full, statevec_ens_mean, statevec_bg = run_model_with_filter(
-        enkf_params["model_name"],
-        enkf_params["filter_type"],
-        *da_args,
-        **kwargs  
-    )
+statevec_ens_full, statevec_ens_mean, statevec_bg = run_model_with_filter(
+    enkf_params["model_name"],
+    enkf_params["filter_type"],
+    *da_args,
+    **kwargs  
+)
 
-    # load data to be written to file
-    # comm.Barrier()
-    # if rank == 0:
-    if True:
-        PETSc.Sys.Print("Saving data ...")
-        save_all_data(
-            enkf_params=enkf_params,
-            nofilter=True,
-            t=kwargs["t"], b_io=np.array([b_in,b_out]),
-            Lxy=np.array([Lx,Ly]),nxy=np.array([nx,ny]),
-            statevec_true=statevec_true,
-            statevec_nurged=statevec_nurged, 
-            obs_max_time=np.array([params["obs_max_time"]]),
-            obs_index=kwargs["obs_index"],
-            w=hu_obs
-        )
+# load data to be written to file
 
-        # --- Save final data ---
-        save_all_data(
-            enkf_params=enkf_params,
-            statevec_ens_full=statevec_ens_full,
-            statevec_ens_mean=statevec_ens_mean,
-            statevec_bg=statevec_bg
-        )
-    else:
-        None
+PETSc.Sys.Print("Saving data ...")
+save_all_data(
+    enkf_params=enkf_params,
+    nofilter=True,
+    t=kwargs["t"], b_io=np.array([b_in,b_out]),
+    Lxy=np.array([Lx,Ly]),nxy=np.array([nx,ny]),
+    statevec_true=statevec_true,
+    statevec_nurged=statevec_nurged, 
+    obs_max_time=np.array([params["obs_max_time"]]),
+    obs_index=kwargs["obs_index"],
+    w=hu_obs
+)
+
+# --- Save final data ---
+save_all_data(
+    enkf_params=enkf_params,
+    statevec_ens_full=statevec_ens_full,
+    statevec_ens_mean=statevec_ens_mean,
+    statevec_bg=statevec_bg
+)
+

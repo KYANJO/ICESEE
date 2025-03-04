@@ -442,7 +442,7 @@ class ParallelManager:
         return global_shape * Nens * bytes_per_element/1e9  # Convert to GB
 
     # ---- Collective Communication Operations ----
-    # -- method to gather data from all ranks
+    # -- method to gather data from all ranks (many to many)
     def all_gather_data(self, comm, data):
         """
         Gathers data from all ranks using collective communication."""
@@ -462,6 +462,7 @@ class ParallelManager:
 
         return gathered_data
     
+    # -- method to gather data from all ranks (many to one)
     def gather_data(self, comm, data, root=0):
         """
         Gathers data from all ranks using collective communication."""

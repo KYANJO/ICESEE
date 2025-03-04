@@ -336,9 +336,6 @@ class EnsembleKalmanFilter:
 
         n,Nens = ensemble.shape
         m   =self.Observation_vec.shape[0] 
-        
-        # Debug
-        # print(f"[Debug] EnKF Analysis: Ensemble dimensions (n={n}, N={N}), Observation size (m={m})")
 
         # compute virtual observations and ensemble analysis
         virtual_observations  = np.zeros((m,Nens))
