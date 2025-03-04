@@ -22,7 +22,7 @@ Icepack applications can now be run in containers using both **Apptainer** and *
 Each application includes either a Python script or a Jupyter notebook for execution. Detailed documentation for these scripts and notebooks is included in the README files in each application folder. The documentation and full implementation of flowline model is forthcoming.
 
 Both  **Icepack** and **Lorenz-96** applications support four variants of the Ensemble Kalman Filter for data assimilation:
-1. **ENEnKF**: Stochastic Ensemble Kalman Filter
+1. **EnKF**: Stochastic Ensemble Kalman Filter
 2. **DEnKF**: Deterministic Ensemble Kalman Filter
 3. **EnTKF**: Ensemble Transform Kalman Filter
 4. **EnRSKF**: Ensemble Square Root Kalman Filter
