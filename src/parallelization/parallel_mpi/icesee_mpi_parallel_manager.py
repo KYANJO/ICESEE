@@ -461,6 +461,18 @@ class ParallelManager:
         comm.Allgather([data, MPI.DOUBLE], [gathered_data, MPI.DOUBLE])
 
         return gathered_data
+    
+    def gather_data(self, comm, data, root=0):
+        """
+        Gathers data from all ranks using collective communication."""
+        data = np.asarray(data)
+        size = comm.Get_size()
+        if comm.Get_rank() == root:
+            gathered_data = np.empty((size,) + data.shape, dtype=np.float64)
+        else:
+            gathered_data = None
+        comm.Gather([data, MPI.DOUBLE], [gathered_data, MPI.DOUBLE], root=root)
+        return gathered_data
 
     def all_reduce_sum(self, comm, data):
         """
