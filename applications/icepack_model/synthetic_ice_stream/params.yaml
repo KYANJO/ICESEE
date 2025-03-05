@@ -1,9 +1,9 @@
 physical-parameters:
   # Domain parameters
-  Lx: 50e2        # (m)
-  Ly: 12e2        # (m)
-  nx: 12         # number of elements in the x-direction
-  ny: 8        # number of elements in the y-direction
+  Lx: 50e3        # (m)
+  Ly: 12e3        # (m)
+  nx: 24         # number of elements in the x-direction
+  ny: 16        # number of elements in the y-direction
   degree: 2       # degree of the polynomial basis functions
 
   # Bedrock slopes 
