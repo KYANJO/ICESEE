@@ -128,9 +128,11 @@ class ParallelManager:
         Nens = params.get("Nens", 1)  # Number of ensemble members
 
         if params.get("sequential_run", False):
+            if self.rank_world == 0: print("[ICESEE] Running sequential mode")
             return self.rank_world, self.size_world, self.COMM_WORLD
         
         if params.get("default_run", False):
+            if self.rank_world == 0: print("[ICESEE] Running default parallel mode")
             if Nens >= self.size_world: 
                 # Divide ranks into `size` subcommunicators
                 subcomm_size = min(self.size_world, Nens)  # Use at most `Nens` groups
@@ -147,6 +149,7 @@ class ParallelManager:
             return self.rank_sub, self.size_sub, self.comm_sub
         
         if params.get("even_distribution", False):
+            if self.rank_world == 0: print("[ICESEE] Running even distribution mode")
             # split the global communicator into size subcommunicators
             self.comm_sub = self.COMM_WORLD.Split(self.rank_world % self.size_world)
             self.rank_sub = self.comm_sub.Get_rank()
@@ -188,6 +191,7 @@ class ParallelManager:
             return None, None, None, None, None, None, rank_world, size_world, comm_world, None, None
 
         if params.get("default_run", False):
+
             if Nens >= size_world: 
                 # Divide ranks into `size` subcommunicators
                 subcomm_size = min(size_world, Nens)  # Use at most `Nens` groups
@@ -244,9 +248,9 @@ class ParallelManager:
                 sub_rank = subcomm.Get_rank()
                 sub_size = subcomm.Get_size()
 
-                print(f"[Rank {rank_world}] Processing ensembles {start} to {stop}")
+                # print(f"[Rank {rank_world}] Processing ensembles {start} to {stop}")
 
-            return None, None, sub_rank, sub_size, subcomm, None, rank_world, size_world, comm_world, start, stop
+                return None, None, sub_rank, sub_size, subcomm, None, rank_world, size_world, comm_world, start, stop
     
         return None
 

@@ -82,7 +82,9 @@ if not flag_jupyter:
     args = parser.parse_args()
 
     # check if default run arugment is provided
-    run_flag = not (args.default_run or args.sequential_run or args.even_distribution)
+    run_flag = False
+    if (args.default_run or args.sequential_run or args.even_distribution):
+        run_flag = True
 
     # Determine execution mode
     selected_mode = "default_run"  # Default mode
@@ -176,3 +178,5 @@ if not flag_jupyter:
     # print(obs_t)
     kwargs["obs_index"] = obs_idx
     params["number_obs_instants"] = num_observations
+    kwargs["parallel_flag"]       = enkf_params.get("parallel_flag", "serial")
+    kwargs["commandlinerun"]      = enkf_params.get("commandlinerun", False)

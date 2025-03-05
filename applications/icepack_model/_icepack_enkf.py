@@ -15,19 +15,21 @@ from scipy.stats import multivariate_normal,norm
 from synthetic_ice_stream._icepack_model import *
 
 # --- Forecast step ---
-def forecast_step_single(ens=None, ensemble=None, nd=None, Q_err=None, params=None, **kwargs):
+def forecast_step_single(ens=None, ensemble=None, nd=None, **kwargs):
     """ensemble: packs the state variables:h,u,v of a single ensemble member
                  where h is thickness, u and v are the x and y components 
                  of the velocity field
     Returns: ensemble: updated ensemble member
     """
     # get the dimension of the state variables
+    params = kwargs["params"]
+    Q_err = kwargs["Q_err"]
     hdim = nd // (params["num_state_vars"] + params["num_param_vars"])
     state_block_size = hdim*params["num_state_vars"]
 
 
     #  call the run_model fun to push the state forward in time
-    ensemble[:,ens] = run_model(ens, ensemble, nd, params, **kwargs)
+    ensemble[:,ens] = run_model(ens, ensemble, nd, **kwargs)
 
     # add noise to the state variables
     noise = np.random.multivariate_normal(np.zeros(state_block_size), Q_err)
@@ -81,10 +83,11 @@ def background_step(k=None,statevec_bg=None, hdim=None, **kwargs):
     return statevec_bg
 
 # --- generate true state ---
-def generate_true_state(statevec_true=None,params=None, **kwargs):
+def generate_true_state(statevec_true=None, **kwargs):
     """generate the true state of the model"""
     nd, nt = statevec_true.shape
     nt = nt - 1
+    params = kwargs["params"]
     hdim = nd // (params["num_state_vars"] + params["num_param_vars"])
 
     # unpack the **kwargs
@@ -123,14 +126,15 @@ def generate_true_state(statevec_true=None,params=None, **kwargs):
 
     return statevec_true
 
-def generate_nurged_state(statevec_nurged=None,params=None,**kwargs):
+def generate_nurged_state(statevec_nurged=None,**kwargs):
     """generate the nurged state of the model"""
     nd, nt = statevec_nurged.shape
     nt = nt - 1
+    params = kwargs["params"]
     hdim = nd // (params["num_state_vars"] + params["num_param_vars"])
 
     # unpack the **kwargs
-    a = kwargs.get('a', None)
+    a = kwargs.get('a_p', None)
     t = kwargs.get('t', None)
     x = kwargs.get('x', None)
     Lx = kwargs.get('Lx', None)
@@ -241,10 +245,11 @@ def generate_nurged_state(statevec_nurged=None,params=None,**kwargs):
 
 # --- initialize the ensemble members ---
 def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
-                        statevec_ens_mean=None, statevec_ens_full=None, params=None,**kwargs):
+                        statevec_ens_mean=None, statevec_ens_full=None,**kwargs):
     
     """initialize the ensemble members"""
     nd, N = statevec_ens.shape
+    params = kwargs["params"]
     hdim = nd // (params["num_state_vars"] + params["num_param_vars"])
 
     # unpack the **kwargs
@@ -263,7 +268,7 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
     nurged_entries  = kwargs.get('nurged_entries', None)
 
     # call the nurged state to initialize the ensemble
-    statevec_nurged = generate_nurged_state( np.zeros_like(statevec_bg), params, **kwargs)
+    statevec_nurged = generate_nurged_state( np.zeros_like(statevec_bg), **kwargs)
                                            
     # fetch h u, and v from the nurged state
     h_perturbed = statevec_nurged[:hdim,0]

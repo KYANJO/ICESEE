@@ -31,7 +31,7 @@ from icepack.constants import (
 
 # --- model initialization ---
 def initialize_model(physical_params, modeling_params, comm):
-
+    """des: initialize the icepack model"""
     # get size and rank of the communicator
     size = comm.Get_size()
     rank = comm.Get_rank()
@@ -166,7 +166,7 @@ def Icepack(solver, h, u, a, b, dt, h0, **kwargs):
     return h, u
 
 # --- Run model for the icepack model ---
-def run_model(ens, ensemble, nd, params, **kwargs):
+def run_model(ens, ensemble, nd, **kwargs):
     """des: icepack model function
         inputs: ensemble - current state of the model
                 **kwargs - additional arguments for the model
@@ -182,6 +182,7 @@ def run_model(ens, ensemble, nd, params, **kwargs):
     C  = kwargs.get('C', None)
     Q  = kwargs.get('Q', None)
     V  = kwargs.get('V', None)
+    params = kwargs.get('params', None)
     solver = kwargs.get('solver', None)
    
     ndim = nd // (params["num_state_vars"] + params["num_param_vars"])
@@ -199,6 +200,7 @@ def run_model(ens, ensemble, nd, params, **kwargs):
         #   get ensemble = [h,u,v,a]
         a_vec = ensemble[3*ndim:,ens]
         a = Function(Q)
+        # print(f"a size: {a.dat.data.size} avec {a_vec.shape} ensemble shape: {ensemble.shape}")
         a.dat.data[:] = a_vec.copy()
     else:
         # don't update the accumulation rate (updates smb)
