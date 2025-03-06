@@ -15,23 +15,23 @@ from scipy.spatial import distance_matrix
 import bigmpi4py as BM # BigMPI for large data transfer and communication
 import gc # garbage collector to free up memory
 import copy
+import re
 import numexpr as ne # for fast numerical computations
 
 
 # --- Add required paths ---
-src_dir = os.path.join(project_root, 'src')
-applications_dir = os.path.join(project_root, 'applications')
-parallelization_dir = os.path.join(project_root, 'parallelization')
-sys.path.insert(0, src_dir)
-sys.path.insert(0, applications_dir)
-sys.path.insert(0, parallelization_dir)
+src_dir             = os.path.join(project_root, 'src')               # source files directory
+applications_dir    = os.path.join(project_root, 'applications')      # applications directory
+parallelization_dir = os.path.join(project_root, 'parallelization')   # parallelization directory
+sys.path.insert(0, src_dir)                  # add the source directory to the path
+sys.path.insert(0, applications_dir)         # add the applications directory to the path
+sys.path.insert(0, parallelization_dir)      # add the parallelization directory to the path
 
 # class instance of the observation operator and its Jacobian
-from utils import *
-import re
-from EnKF.python_enkf.EnKF import EnsembleKalmanFilter as EnKF
-from supported_models import SupportedModels
-from localization_func import localization
+from utils import *                                                # utility functions for the model
+from EnKF.python_enkf.EnKF import EnsembleKalmanFilter as EnKF     # Ensemble Kalman Filter
+from supported_models import SupportedModels                       # supported models for data assimilation routine
+from localization_func import localization                         # localization function for EnKF
 
 # ---- Run model with EnKF ----
 def gaspari_cohn(r):
@@ -70,10 +70,14 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
     if re.match(r"\AMPI_model\Z", parallel_flag, re.IGNORECASE):
         from mpi4py import MPI
         from parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
+        from mpi_analysis_functions import analysis_enkf_update, EnKF_X5
 
         # --- icesee mpi parallel manager ---------------------------------------------------
         # --- ensemble load distribution --
         rounds, color, sub_rank, sub_size, subcomm, subcomm_size, rank_world, size_world, comm_world, start, stop = ParallelManager().icesee_mpi_ens_distribution(params)
+
+        # --- initialize seed for reproducibility ---
+        ParallelManager().initialize_seed(comm_world, base_seed=0)
 
         # --- Generate True and Nurged States ---
         if params["even_distribution"] or (params["default_run"] and size_world < params["Nens"]):
@@ -93,8 +97,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 ensemble_true_state = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
                 ensemble_nurged_state = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
             # Bcast the true and nurged states
-            comm_world.bcast(ensemble_true_state, root=0)
-            comm_world.bcast(ensemble_nurged_state, root=0)
+            comm_world.Bcast(ensemble_true_state, root=0)
+            comm_world.Bcast(ensemble_nurged_state, root=0)
         else:
             # --- Generate True and Nurged States ---
             print("Generating true state ...")
@@ -178,7 +182,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
             comm_world.Bcast(ensemble_vec, root=0)
             comm_world.Bcast(ensemble_vec_mean, root=0)
             comm_world.Bcast(ensemble_vec_full, root=0)
-            # print(f"Rank [{rank_world}] Shape of the ensemble: {ensemble_vec[:5,:]}")
+            # print("using this ***************")
         else:
             print("Initializing the ensemble ...")
             ensemble_bg, ensemble_vec, ensemble_vec_mean, ensemble_vec_full = model_module.initialize_ensemble(
@@ -286,7 +290,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 ensemble_col_stack = []
                 for ens in range(Nens):
                     comm_world.Barrier() # make sure all processors are in sync
-                    ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, Q_err=Q_err, params=params, **model_kwargs)
+                    ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd,  **model_kwargs)
                     comm_world.Barrier() # make sure all processors reach this point before moving on
                    
                     # gather the ensemble from all processors to rank 0
@@ -430,21 +434,21 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         ensemble_id = color + round_id * subcomm_size  # Global ensemble index
 
                         if ensemble_id < Nens:  # Only process valid ensembles
-                            print(f"Rank {rank_world} processing ensemble {ensemble_id} in round {round_id + 1}/{rounds}")
+                            # print(f"Rank {rank_world} processing ensemble {ensemble_id} in round {round_id + 1}/{rounds}")
 
                             # Ensure all ranks in the subcommunicator are synchronized before running
                             subcomm.Barrier()
 
                             # Call the forecast step function
                             ens = ensemble_id
-                            ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, Q_err=Q_err, params=params, **model_kwargs)
+                            ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, **model_kwargs)
 
                             # Ensure all ranks in the subcommunicator are synchronized before moving on
-                            subcomm.Barrier()
+                            # subcomm.Barrier()
 
                             # Gather results within each subcommunicator
-                            # gathered_ensemble = ParallelManager().gather_data(subcomm, copy.deepcopy(ensemble_vec[:,ens]), root=0)
-                            gathered_ensemble = subcomm.gather(ensemble_vec[:,ens], root=0)
+                            gathered_ensemble = ParallelManager().gather_data(subcomm, copy.deepcopy(ensemble_vec[:,ens]), root=0)
+                            # gathered_ensemble = subcomm.gather(ensemble_vec[:,ens], root=0)
 
                             # Ensure only rank = 0 in each subcommunicator gathers the results
                             if sub_rank == 0:
@@ -453,8 +457,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             ens_list.append(gathered_ensemble if sub_rank == 0 else None)
 
                         # Gather results from all subcommunicators
-                        # gathered_ensemble_global = ParallelManager().gather_data(comm_world, ens_list, root=0)
-                        gathered_ensemble_global = comm_world.gather(ens_list, root=0)
+                        gathered_ensemble_global = ParallelManager().gather_data(comm_world, ens_list, root=0)
+                        # gathered_ensemble_global = comm_world.gather(ens_list, root=0)
                         #  free up memory
                         del gathered_ensemble; gc.collect()
 
@@ -465,7 +469,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
                     # Call the forecast step fucntion- Each subcomm runs the function indepadently
                     ens = color # each subcomm has a unique color
-                    ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, Q_err=Q_err, params=params, **model_kwargs)
+                    ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, **model_kwargs)
 
                     # Ensure all ranks synchronize before moving on
                     # subcomm.Barrier()
@@ -509,6 +513,9 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 # broadcast the shape to all processors
                 comm_world.Bcast([shape_ens, MPI.INT], root=0)
 
+                # --- compute the mean
+                ens_mean = ParallelManager().compute_mean_matrix_from_root(ensemble_vec, shape_ens[0], Nens, comm_world, root=0)
+
                 # Analysis step
                 obs_index = model_kwargs["obs_index"]
                 if (km < params["number_obs_instants"]) and (k+1 == obs_index[km]):
@@ -526,119 +533,36 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         d = UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km])
 
                         if EnKF_flag:
-                            Eta = np.zeros((d.shape[0], Nens)) # mxNens, ensemble pertubations
-                            D   = np.zeros_like(Eta) # mxNens #virtual observations
-                            HA  = np.zeros_like(D)
-                            for ens in range(Nens):
-                                Eta[:,ens] = multivariate_normal.rvs(mean=np.zeros(d.shape[0]), cov=Cov_obs) 
-                                D[:,ens] = d + Eta[:,ens]
-                                HA[:,ens] = h(ensemble_vec[:,ens])
-                            
-                            # --- compute the innovations D` = D-HA
-                            Dprime = D - HA # mxNens
-
-                            # --- compute HAbar
-                            HAbar = np.mean(HA, axis=1) # mx1
-                            # --- compute HAprime
-                            HAprime = HA - HAbar.reshape(-1,1) # mxNens (requires H to be linear)
-                            
-                            # Aprime = ensemble_vec@(np.eye(Nens) - one_N) # mxNens
-                            # one_N = np.ones((Nens,Nens))/Nens
-                            # HAprime= HA@(np.eye(Nens) - one_N) # mxNens
-
-                            # get the min(m,Nens)
-                            m_obs = d.shape[0]
-                            nrmin = min(m_obs, Nens)
-
-                            # --- compute HA' + eta
-                            HAprime_eta = HAprime + Eta
-
-                            # --- compute the SVD of HA' + eta
-                            U, sig, _ = np.linalg.svd(HAprime_eta, full_matrices=False)
-
-                            # --- convert s to eigenvalues
-                            sig = sig**2
-                            # for i in range(nrmin):
-                            #     sig[i] = sig[i]**2
-                            
-                            # ---compute the number of significant eigenvalues
-                            sigsum = np.sum(sig[:nrmin])  # Compute total sum of the first `nrmin` eigenvalues
-                            sigsum1 = 0.0
-                            nrsigma = 0
-
-                            for i in range(nrmin):
-                                if sigsum1 / sigsum < 0.999:
-                                    nrsigma += 1
-                                    sigsum1 += sig[i]
-                                    sig[i] = 1.0 / sig[i]  # Inverse of eigenvalue
-                                else:
-                                    sig[i:nrmin] = 0.0  # Set remaining eigenvalues to 0
-                                    break  # Exit the loop
-                            
-                            # compute X1 = sig*UT #Nens x m_obs
-                            X1 = np.empty((nrmin, m_obs))
-                            for j in range(m_obs):
-                                for i in range(nrmin):
-                                    X1[i,j] =sig[i]*U[j,i]
-                            
-                            # compute X2 = X1*Dprime # Nens x Nens
-                            X2 = np.dot(X1, Dprime)
-                            del Cov_obs, sig, X1, Dprime; gc.collect()
-                            
-                            # print(f"Rank: {rank_world} X2 shape: {X2.shape}")
-                            #  compute X3 = U*X2 # m_obs x Nens
-                            X3 = np.dot(U, X2)
-
-                            # print(f"Rank: {rank_world} X3 shape: {X3.shape}")
-                            # compute X4 = (HAprime.T)*X3 # Nens x Nens
-                            X4 = np.dot(HAprime.T, X3)
-                            del X2, X3, U, HAprime; gc.collect()
-                            
-                            # print(f"Rank: {rank_world} X4 shape: {X4.shape}")
-                            # compute X5 = X4 + I
-                            X5 = X4 + np.eye(Nens)
-                            del X4; gc.collect()
-
+                            # compute the X5 matrix
+                            X5 = EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d)
                             y_i = np.sum(X5, axis=1)
-                            # ensemble_vec_mean[:,k+1] = (1/Nens)*(ensemble_vec @ y_i.reshape(-1,1)).ravel()
+                            ensemble_vec_mean[:,k+1] = (1/Nens)*(ensemble_vec @ y_i.reshape(-1,1)).ravel()
                             
                     else:
                         X5 = np.empty((Nens, Nens))
 
-                    # broadcast X5 to all processors
-                    X5 = BM.bcast(X5, comm=comm_world)
-
-                    # initialize the an empty ensemble vector for the rest of the processors
-                    if rank_world != 0:
-                        ensemble_vec = np.empty(shape_ens, dtype=np.float64)
-
-                    # --- scatter ensemble_vec to all processors ---
-                    scatter_ensemble = BM.scatter(ensemble_vec, comm_world)
-
-                    # do the ensemble analysis update: A_j = Fj*X5 
-                    analysis_vec = np.dot(scatter_ensemble, X5)
-
-                    # gather from all processors
-                    ensemble_vec = BM.allgather(analysis_vec, comm_world)
-
-                    # clean the memory
-                    del scatter_ensemble, analysis_vec; gc.collect()
-
+                    # call the analysis update function
+                    ensemble_vec = analysis_enkf_update(ensemble_vec, shape_ens, X5, comm_world)
+                
                     # update the observation index
                     km += 1
 
                     # inflate the ensemble
                     ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
 
-                    ensemble_vec = copy.deepcopy(ensemble_vec[:nd,:])
+                    ensemble_vec = copy.deepcopy(ensemble_vec[:,:])
 
-                # save the ensemble               
-                ensemble_vec_full[:,:,k+1] = ensemble_vec[:nd,:]
-                    # ens
+                # save the ensemble    
+                if rank_world == 0:
+                    ensemble_vec_full[:,:,k+1] = ensemble_vec[:,:]     
+                    ensemble_vec_mean[:,k+1]   = ens_mean      
+                else:
+                    ensemble_vec_full = np.empty((shape_ens[0],Nens,params["nt"]+1), dtype=np.float64)
+                    ensemble_vec_mean = np.empty((shape_ens[0],params["nt"]+1), dtype=np.float64)
 
+                # free up memory
+                del gathered_ensemble_global; gc.collect()
 
-                    
-                # exit() 
             # -------------------------------------------------- end of cases 2 & 3 --------------------------------------------
 
             # --- case 4: Evenly distribute ensemble members among processors 
@@ -652,7 +576,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         ensemble_local[:, ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_local, nd=nd, **model_kwargs)
 
                     # --- compute the ensemble mean ---
-                    ensemble_vec_mean[:,k+1] = ParallelManager().compute_mean(ensemble_local, comm_world)
+                    ensemble_vec_mean[:,k+1] = ParallelManager().compute_mean_from_local_matrix(ensemble_local, comm_world)
 
                     # --- gather all local ensembles from all processors to root---
                     gathered_ensemble = ParallelManager().gather_data(comm_world, ensemble_local, root=0)
@@ -677,79 +601,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             d = UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km])
 
                             if EnKF_flag:
-                                Eta = np.zeros((d.shape[0], Nens)) # mxNens, ensemble pertubations
-                                D   = np.zeros_like(Eta) # mxNens #virtual observations
-                                HA  = np.zeros_like(D)
-                                for ens in range(Nens):
-                                    Eta[:,ens] = multivariate_normal.rvs(mean=np.zeros(d.shape[0]), cov=Cov_obs) 
-                                    D[:,ens] = d + Eta[:,ens]
-                                    HA[:,ens] = h(ensemble_vec[:,ens])
-                                
-                                # --- compute the innovations D` = D-HA
-                                Dprime = D - HA # mxNens
-
-                                # --- compute HAbar
-                                HAbar = np.mean(HA, axis=1) # mx1
-                                # --- compute HAprime
-                                HAprime = HA - HAbar.reshape(-1,1) # mxNens (requires H to be linear)
-                                
-                                # Aprime = ensemble_vec@(np.eye(Nens) - one_N) # mxNens
-                                # one_N = np.ones((Nens,Nens))/Nens
-                                # HAprime= HA@(np.eye(Nens) - one_N) # mxNens
-
-                                # get the min(m,Nens)
-                                m_obs = d.shape[0]
-                                nrmin = min(m_obs, Nens)
-
-                                # --- compute HA' + eta
-                                HAprime_eta = HAprime + Eta
-
-                                # --- compute the SVD of HA' + eta
-                                U, sig, _ = np.linalg.svd(HAprime_eta, full_matrices=False)
-
-                                # --- convert s to eigenvalues
-                                sig = sig**2
-                                # for i in range(nrmin):
-                                #     sig[i] = sig[i]**2
-                                
-                                # ---compute the number of significant eigenvalues
-                                sigsum = np.sum(sig[:nrmin])  # Compute total sum of the first `nrmin` eigenvalues
-                                sigsum1 = 0.0
-                                nrsigma = 0
-
-                                for i in range(nrmin):
-                                    if sigsum1 / sigsum < 0.999:
-                                        nrsigma += 1
-                                        sigsum1 += sig[i]
-                                        sig[i] = 1.0 / sig[i]  # Inverse of eigenvalue
-                                    else:
-                                        sig[i:nrmin] = 0.0  # Set remaining eigenvalues to 0
-                                        break  # Exit the loop
-                                
-                                # compute X1 = sig*UT #Nens x m_obs
-                                X1 = np.empty((nrmin, m_obs))
-                                for j in range(m_obs):
-                                    for i in range(nrmin):
-                                        X1[i,j] =sig[i]*U[j,i]
-                                
-                                # compute X2 = X1*Dprime # Nens x Nens
-                                X2 = np.dot(X1, Dprime)
-                                del Cov_obs, sig, X1, Dprime; gc.collect()
-                                
-                                # print(f"Rank: {rank_world} X2 shape: {X2.shape}")
-                                #  compute X3 = U*X2 # m_obs x Nens
-                                X3 = np.dot(U, X2)
-
-                                # print(f"Rank: {rank_world} X3 shape: {X3.shape}")
-                                # compute X4 = (HAprime.T)*X3 # Nens x Nens
-                                X4 = np.dot(HAprime.T, X3)
-                                del X2, X3, U, HAprime; gc.collect()
-                                
-                                # print(f"Rank: {rank_world} X4 shape: {X4.shape}")
-                                # compute X5 = X4 + I
-                                X5 = X4 + np.eye(Nens)
-                                del X4; gc.collect()
-
+                                # compute the X5 matrix
+                                X5 = EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d)
                                 y_i = np.sum(X5, axis=1)
                                 ensemble_vec_mean[:,k+1] = (1/Nens)*(ensemble_vec @ y_i.reshape(-1,1)).ravel()
                                 
@@ -759,23 +612,9 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         # clean the memory
                         del ensemble_local, gathered_ensemble; gc.collect()
 
-                        # Broadcast X5 to all processors
-                        X5 = BM.bcast(X5, comm_world)
-                        # the sum of each column of X5 should be equal to 1
-                        # print(f"Rank: {rank_world} columns of X5: {bd_arr}")
-                        # print(f"Rank: {rank_world} column sum of X5: {np.sum(X5, axis=0)}")
-
-                        # --- scatter ensemble_vec to all processors ---
-                        scatter_ensemble = BM.scatter(ensemble_vec, comm_world)
-
-                        # do the ensemble analysis update: A_j = Fj*X5 
-                        analysis_vec = np.dot(scatter_ensemble, X5)
-
-                        # gather from all processors
-                        ensemble_vec = BM.allgather(analysis_vec, comm_world)
-    
-                        # clean the memory
-                        del scatter_ensemble, analysis_vec; gc.collect()
+                        # call the analysis update function
+                        shape_ens = ensemble_vec.shape # get the shape of the ensemble
+                        ensemble_vec = analysis_enkf_update(ensemble_vec, shape_ens, X5, comm_world)
 
                         # update the ensemble with observations instants
                         km += 1

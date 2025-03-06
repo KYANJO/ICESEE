@@ -72,7 +72,7 @@ class EnsembleKalmanFilter:
             # Loop over the ensemble members
             for ens in range(Nens):
                 ensemble[:,ens] = forecast_step_single(ens=ens, ensemble=ensemble, nd=nd, \
-                                             Q_err=Q_err, params=self.parameters, **model_kwargs)
+                                              **model_kwargs)
             return ensemble
 
         # Using divide and conquer parallelization with MPI for non-MPI application in forecast_step_single
@@ -101,7 +101,7 @@ class EnsembleKalmanFilter:
 
             # Perform forecast step
             for ens in range(local_ensemble.shape[1]):
-                local_ensemble[:, ens] = forecast_step_single(ens=ens, ensemble=local_ensemble, nd=nd, Q_err=Q_err, params=self.parameters, **model_kwargs)
+                local_ensemble[:, ens] = forecast_step_single(ens=ens, ensemble=local_ensemble, nd=nd,  **model_kwargs)
 
             # Avoid gather; update ensemble in place
             gathered_ensemble = comm.allgather(local_ensemble)
@@ -130,7 +130,7 @@ class EnsembleKalmanFilter:
             print(f"\nranks: {rank}, size: {size}\n")
 
             for ens in range(ensemble.shape[1]):
-                ensemble[:, ens] = forecast_step_single(ens=ens, ensemble=ensemble, nd=nd, Q_err=Q_err, params=self.parameters, **model_kwargs)
+                ensemble[:, ens] = forecast_step_single(ens=ens, ensemble=ensemble, nd=nd,  **model_kwargs)
 
             gathered_ensemble = self.parallel_manager.all_gather_data(comm, ensemble)
             #  initalize the ensemble to be returned
