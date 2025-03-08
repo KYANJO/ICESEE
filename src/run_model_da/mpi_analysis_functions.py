@@ -28,7 +28,7 @@ def EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d):
     D   = np.zeros_like(Eta) # mxNens #virtual observations
     HA  = np.zeros_like(D)
     for ens in range(Nens):
-        Eta[:,ens] = multivariate_normal.rvs(mean=np.zeros(d.shape[0]), cov=Cov_obs) 
+        Eta[:,ens] = np.random.multivariate_normal(mean=np.zeros(d.shape[0]), cov=Cov_obs) 
         D[:,ens] = d + Eta[:,ens]
         HA[:,ens] = h(ensemble_vec[:,ens])
     

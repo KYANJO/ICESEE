@@ -68,11 +68,15 @@ class EnsembleKalmanFilter:
         if re.match(r"\Aserial\Z", self.parallel_flag, re.IGNORECASE):
             # Serial forecast step
             nd, Nens = ensemble.shape # Get the number of ensemble members
+            state_block_size = nd // self.parameters["total_state_param_vars"] 
 
             # Loop over the ensemble members
             for ens in range(Nens):
                 ensemble[:,ens] = forecast_step_single(ens=ens, ensemble=ensemble, nd=nd, \
                                               **model_kwargs)
+                q0 = multivariate_normal.rvs(np.zeros(nd), Q_err)
+
+                ensemble[:state_block_size,ens] = ensemble[:state_block_size,ens] + q0[:state_block_size]
             return ensemble
 
         # Using divide and conquer parallelization with MPI for non-MPI application in forecast_step_single

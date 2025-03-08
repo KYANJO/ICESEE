@@ -64,7 +64,8 @@ params["sig_obs"] = sig_obs
 
 # --- Run Data Assimilation ---
 ndim = params["nd"] // (params["num_state_vars"] + params["num_param_vars"])
-Q_err = np.eye(ndim*params["num_state_vars"]) * params["sig_Q"] ** 2 #process noise covariance matrix
+# Q_err = np.eye(ndim*params["num_state_vars"]) * params["sig_Q"] ** 2 #process noise covariance matrix
+Q_err = np.eye(params["nd"]) * params["sig_Q"] ** 2 #process noise covariance matrix
 
 # Additional arguments for the EnKF
 kwargs.update({"Q_err": Q_err,

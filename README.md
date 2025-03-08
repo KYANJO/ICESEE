@@ -5,9 +5,21 @@ Ice Sheet State and Parameter Estimator (ICESEE) model is a state-of-the-art dat
 This design is being extended to integrate with cloud computing services such as **AWS**, ensuring scalability and efficiency for larger simulations. Eventually, the software will be incorporated into the **GHUB online ice sheet platform**, significantly enhancing its capabilities by including the new features currently under development.
 
 ---
+## Installation
 
+```bash
+pip install ICESEE
+```
 ## **Usage**
 
+---
+
+##  Build the Package
+Make sure you have **setuptools**, **wheel**, and **twine** installed:
+
+```bash
+pip install setuptools wheel twine
+```
 The supported applications are located in the [applications](./applications) directory and currently include:
 - **[Flowline](./applications/flowline/)**
 - **[Icepack](./applications/icepack/)**

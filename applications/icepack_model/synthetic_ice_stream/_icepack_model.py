@@ -29,6 +29,14 @@ from icepack.constants import (
     weertman_sliding_law as m
 )
 
+# --- Utility imports ---
+sys.path.insert(0, '../../../config')
+from _utility_imports import icesee_get_index
+
+# --- globally define the state variables ---
+global vec_inputs 
+vec_inputs = ['h','u','v','smb']
+
 # --- model initialization ---
 def initialize_model(physical_params, modeling_params, comm):
     """des: initialize the icepack model"""
@@ -184,21 +192,28 @@ def run_model(ens, ensemble, nd, **kwargs):
     V  = kwargs.get('V', None)
     params = kwargs.get('params', None)
     solver = kwargs.get('solver', None)
+
+    # --- define the state variables list ---
+    global vec_inputs 
+
+    # call the icesee_get_index function to get the indices of the state variables
+    vecs, indx_map = icesee_get_index(ensemble, vec_inputs, **kwargs)
    
     ndim = nd // (params["num_state_vars"] + params["num_param_vars"])
     state_block_size = ndim*params["num_state_vars"]
     
     # unpack h,u,v from the ensemble member
-    h_vec = ensemble[:ndim,ens]
-    u_vec = ensemble[ndim:2*ndim,ens]
-    v_vec = ensemble[2*ndim:3*ndim,ens]
+    h_vec = ensemble[indx_map["h"],ens]
+    u_vec = ensemble[indx_map["u"],ens]
+    v_vec = ensemble[indx_map["v"],ens]
 
     # joint estimation
     if kwargs["joint_estimation"]:
         # Use analysis step to update the accumulation rate
         # - pack accumulation rate with the state variables to
         #   get ensemble = [h,u,v,a]
-        a_vec = ensemble[3*ndim:,ens]
+        a_vec = ensemble[indx_map["smb"],ens]
+
         a = Function(Q)
         # print(f"a size: {a.dat.data.size} avec {a_vec.shape} ensemble shape: {ensemble.shape}")
         a.dat.data[:] = a_vec.copy()
@@ -218,9 +233,9 @@ def run_model(ens, ensemble, nd, **kwargs):
     h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
 
     # update the ensemble members with the new state variables and noise 
-    ensemble[:ndim,ens]              = h.dat.data_ro       
-    ensemble[ndim:2*ndim,ens]        = u.dat.data_ro[:,0]  
-    ensemble[2*ndim:3*ndim,ens]      = u.dat.data_ro[:,1] 
+    ensemble[indx_map["h"],ens] = h.dat.data_ro
+    ensemble[indx_map["u"],ens] = u.dat.data_ro[:,0]
+    ensemble[indx_map["v"],ens] = u.dat.data_ro[:,1]
 
     return ensemble[:,ens]
 

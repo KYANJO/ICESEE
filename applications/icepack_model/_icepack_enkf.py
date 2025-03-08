@@ -36,7 +36,7 @@ def forecast_step_single(ens=None, ensemble=None, nd=None, **kwargs):
     return ensemble[:,ens]
 
 # --- Background step ---
-def background_step(k=None,statevec_bg=None, hdim=None, **kwargs):
+def background_step(k=None, **kwargs):
     """ computes the background state of the model
     Args:
         k: time step index
@@ -55,26 +55,34 @@ def background_step(k=None,statevec_bg=None, hdim=None, **kwargs):
     Q = kwargs.get('Q', None)
     V = kwargs.get('V', None)
     solver = kwargs.get('solver', None)
+    statevec_bg = kwargs["statevec_bg"]
 
     hb = Function(Q)
     ub = Function(V)
 
-    hb.dat.data[:]   = statevec_bg[:hdim,k]
-    ub.dat.data[:,0] = statevec_bg[hdim:2*hdim,k]
-    ub.dat.data[:,1] = statevec_bg[2*hdim:3*hdim,k]
+     # --- define the state variables list ---
+    global vec_inputs 
+
+    # call the icesee_get_index function to get the indices of the state variables
+    vecs, indx_map = icesee_get_index(statevec_bg, vec_inputs, **kwargs)
+
+    # fetch the state variables
+    hb.dat.data[:]   = statevec_bg[indx_map["h"],k]
+    ub.dat.data[:,0] = statevec_bg[indx_map["u"],k]
+    ub.dat.data[:,1] = statevec_bg[indx_map["v"],k]
 
     # call the ice stream model to update the state variables
     hb, ub = Icepack(solver, hb, ub, a, b, dt, h0, fluidity = A, friction = C)
 
     # update the background state at the next time step
-    statevec_bg[:hdim,k+1] = hb.dat.data_ro
-    statevec_bg[hdim:2*hdim,k+1] = ub.dat.data_ro[:,0]
-    statevec_bg[2*hdim:3*hdim,k+1] = ub.dat.data_ro[:,1]
+    statevec_bg[indx_map["h"],k+1] = hb.dat.data_ro
+    statevec_bg[indx_map["u"],k+1] = ub.dat.data_ro[:,0]
+    statevec_bg[indx_map["v"],k+1] = ub.dat.data_ro[:,1]
 
     if kwargs["joint_estimation"]:
         a = kwargs.get('a', None)
-        statevec_bg[3*hdim:,0] = a.dat.data_ro
-        statevec_bg[3*hdim:,k+1] = a.dat.data_ro
+        statevec_bg[indx_map["smb"],0] = a.dat.data_ro
+        statevec_bg[indx_map["smb"],k+1] = a.dat.data_ro
 
     return statevec_bg
 
@@ -129,12 +137,11 @@ def generate_true_state(**kwargs):
 
     return statevec_true
 
-def generate_nurged_state(statevec_nurged=None,**kwargs):
+def generate_nurged_state(**kwargs):
     """generate the nurged state of the model"""
-    nd, nt = statevec_nurged.shape
-    nt = nt - 1
+    
     params = kwargs["params"]
-    hdim = nd // (params["num_state_vars"] + params["num_param_vars"])
+    nt = params["nt"] - 1
 
     # unpack the **kwargs
     a = kwargs.get('a_p', None)
@@ -157,13 +164,22 @@ def generate_nurged_state(statevec_nurged=None,**kwargs):
     u_nurge_ic      = kwargs.get('u_nurge_ic', None)
     nurged_entries  = kwargs.get('nurged_entries', None)
 
+    statevec_nurged = kwargs["statevec_nurged"]
+
+     # --- define the state variables list ---
+    global vec_inputs 
+
+    # call the icesee_get_index function to get the indices of the state variables
+    vecs, indx_map = icesee_get_index(statevec_nurged, vec_inputs, **kwargs)
+
     #  create a bump -100 to 0
     # h_indx = int(np.ceil(nurged_entries+1))
-    if hdim > int(np.ceil(nurged_entries+1)):
+    hdim = vecs['h'].shape[0]
+    if 0.5*hdim > int(np.ceil(nurged_entries+1)):
         h_indx = int(np.ceil(nurged_entries+1))
     else:
-        # 10% of the hdim so that the bump is not too large
-        h_indx = int(np.ceil(hdim*0.01))
+        # 5% of the hdim so that the bump is not too large
+        h_indx = int(np.ceil(hdim*0.05))
    
     # u_indx = int(np.ceil(u_nurge_ic+1))
     u_indx = 1
@@ -197,14 +213,9 @@ def generate_nurged_state(statevec_nurged=None,**kwargs):
         u_perturbed = u.dat.data_ro[:,0]
         v_perturbed = u.dat.data_ro[:,1]
 
-
-    statevec_nurged[:hdim,0]            = h_perturbed
-    statevec_nurged[hdim:2*hdim,0]      = u_perturbed
-    statevec_nurged[2*hdim:3*hdim,0]    = v_perturbed
-
-    # h = h0.copy(deepcopy=True)
-    # u = u0.copy(deepcopy=True)
-    # update h0 and u0 with the nurged values
+    statevec_nurged[indx_map["h"],0]          = h_perturbed
+    statevec_nurged[indx_map["u"],0]          = u_perturbed
+    statevec_nurged[indx_map["v"],0]          = v_perturbed
 
     h = Function(Q)
     u = Function(V)
@@ -223,7 +234,7 @@ def generate_nurged_state(statevec_nurged=None,**kwargs):
         a_in = firedrake.Constant(aa)
         da_  = firedrake.Constant(daa)
         a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
-        statevec_nurged[3*hdim:,0] = a.dat.data_ro
+        statevec_nurged[indx_map["smb"],0] = a.dat.data_ro
 
     for k in range(nt):
         # aa   = a_in_p*(np.sin(tnur[k]) + 1)
@@ -236,28 +247,25 @@ def generate_nurged_state(statevec_nurged=None,**kwargs):
         # call the ice stream model to update the state variables
         h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
 
-        statevec_nurged[:hdim,k+1]          = h.dat.data_ro
-        statevec_nurged[hdim:2*hdim,k+1]    = u.dat.data_ro[:,0]
-        statevec_nurged[2*hdim:3*hdim,k+1]  = u.dat.data_ro[:,1]
+        statevec_nurged[indx_map["h"],k+1] = h.dat.data_ro
+        statevec_nurged[indx_map["u"],k+1] = u.dat.data_ro[:,0]
+        statevec_nurged[indx_map["v"],k+1] = u.dat.data_ro[:,1]
 
         if kwargs["joint_estimation"]:
-            statevec_nurged[3*hdim:,k+1] = a.dat.data_ro
+            statevec_nurged[indx_map["smb"],k+1] = a.dat.data_ro
 
     return statevec_nurged
 
 
 # --- initialize the ensemble members ---
-def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
-                        statevec_ens_mean=None, statevec_ens_full=None,**kwargs):
+def initialize_ensemble(**kwargs):
     
     """initialize the ensemble members"""
-    nd, N = statevec_ens.shape
-    params = kwargs["params"]
-    hdim = nd // (params["num_state_vars"] + params["num_param_vars"])
 
     # unpack the **kwargs
     h0 = kwargs.get('h0', None)
     u0 = kwargs.get('u0', None)
+    params = kwargs["params"]
     # a  = kwargs.get('a', None)
     b  = kwargs.get('b', None)
     dt = kwargs.get('dt', None)
@@ -269,23 +277,37 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
     h_nurge_ic      = kwargs.get('h_nurge_ic', None)
     u_nurge_ic      = kwargs.get('u_nurge_ic', None)
     nurged_entries  = kwargs.get('nurged_entries', None)
+    statevec_ens    = kwargs["statevec_ens"]
+    statevec_bg     = kwargs["statevec_bg"]
+    statevec_ens_mean = kwargs["statevec_ens_mean"]
+    statevec_ens_full = kwargs["statevec_ens_full"]
+
+    # extract the ensemble size
+    N = params["Nens"]
+
+     # --- define the state variables list ---
+    global vec_inputs 
+
+    # call the icesee_get_index function to get the indices of the state variables
+    vecs, indx_map = icesee_get_index(statevec_ens, vec_inputs, **kwargs)
 
     # call the nurged state to initialize the ensemble
-    statevec_nurged = generate_nurged_state( np.zeros_like(statevec_bg), **kwargs)
+    statevec_nurged = generate_nurged_state(**kwargs)
                                            
     # fetch h u, and v from the nurged state
-    h_perturbed = statevec_nurged[:hdim,0]
-    u_perturbed = statevec_nurged[hdim:2*hdim,0]
-    v_perturbed = statevec_nurged[2*hdim:3*hdim,0]
+    h_perturbed = statevec_nurged[indx_map["h"],0]
+    u_perturbed = statevec_nurged[indx_map["u"],0]
+    v_perturbed = statevec_nurged[indx_map["v"],0]
 
     # initialize the ensemble members
     # h_indx = int(np.ceil(nurged_entries+1))
     # h_indx = int(np.ceil(nurged_entries+1))
-    if hdim > int(np.ceil(nurged_entries+1)):
+    hdim = vecs['h'].shape[0]
+    if 0.5*hdim > int(np.ceil(nurged_entries+1)):
         h_indx = int(np.ceil(nurged_entries+1))
     else:
-        # 10% of the hdim so that the bump is not too large
-        h_indx = int(np.ceil(hdim*0.01))
+        # 5% of the hdim so that the bump is not too large
+        h_indx = int(np.ceil(hdim*0.05))
 
     for i in range(N):
         # intial thickness perturbed by bump
@@ -301,16 +323,17 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
         # intial velocity unperturbed
         # statevec_ens[hdim:2*hdim,i] = u_perturbed
         # statevec_ens[2*hdim:3*hdim,i]     = v_perturbed
-        statevec_ens[hdim:2*hdim,i] = u0.dat.data_ro[:,0]
-        statevec_ens[2*hdim:3*hdim,i]     = u0.dat.data_ro[:,1]
+        statevec_ens[indx_map["u"],i] = u0.dat.data_ro[:,0]
+        statevec_ens[indx_map["v"],i] = u0.dat.data_ro[:,1]
+        
 
         # add some kind of perturbations  with mean 0 and variance 1
         noise = np.random.normal(0, 0.1, hdim)
         # noise = multivariate_normal.rvs(np.zeros(hdim), np.eye(hdim)*0.01)
 
-        statevec_ens[:hdim,i] = statevec_ens[:hdim,i]                   + noise
-        statevec_ens[hdim:2*hdim,i] = statevec_ens[hdim:2*hdim,i]       + noise
-        statevec_ens[2*hdim:3*hdim,i] = statevec_ens[2*hdim:3*hdim,i]   + noise
+        statevec_ens[indx_map["h"],i] = statevec_ens[indx_map["h"],i] + noise
+        statevec_ens[indx_map["u"],i] = statevec_ens[indx_map["u"],i] + noise
+        statevec_ens[indx_map["v"],i] = statevec_ens[indx_map["v"],i] + noise
         
         # use the pseudo random field to perturb the state variables
         # field = generate_random_field(kernel='gaussian',**kwargs)
@@ -319,11 +342,12 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
         # initilize the accumulation rate if joint estimation is enabled
         if kwargs["joint_estimation"]:
             # add some spread to the intial accumulation rate
-            initial_smb = statevec_nurged[3*hdim:,0]
+            initial_smb = statevec_nurged[indx_map["smb"],0]
+
             # create a normal distribution spread for the accumulation rate
             spread = np.random.normal(0, 0.01, initial_smb.shape)
             # print(f"[Debug]: spread and initail_smb shapes: {spread.shape}, {initial_smb.shape}")
-            statevec_ens[3*hdim:,i] = initial_smb + spread
+            statevec_ens[indx_map["smb"],i] = initial_smb + spread
 
             # statevec_ens[3*hdim:,i] = statevec_nurged[3*hdim:,0]
 
@@ -331,20 +355,20 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
     noise = np.random.normal(0, 0.1, hdim)
     # noise = multivariate_normal.rvs(np.zeros(hdim), np.eye(hdim)*0.01)
     # initialize the background state
-    statevec_bg[:hdim,0]            = h_perturbed + noise
-    statevec_bg[hdim:2*hdim,0]      = u_perturbed  + noise
-    statevec_bg[2*hdim:3*hdim,0]    = v_perturbed + noise
+    statevec_bg[indx_map["h"],0] = h_perturbed + noise
+    statevec_bg[indx_map["u"],0] = u_perturbed + noise
+    statevec_bg[indx_map["v"],0] = v_perturbed + noise
 
     # initialize the ensemble mean
-    statevec_ens_mean[:hdim,0]           = h_perturbed + noise
-    statevec_ens_mean[hdim:2*hdim,0]     = u_perturbed + noise
-    statevec_ens_mean[2*hdim:3*hdim,0]   = v_perturbed + noise
+    statevec_ens_mean[indx_map["h"],0] = h_perturbed + noise
+    statevec_ens_mean[indx_map["u"],0] = u_perturbed + noise
+    statevec_ens_mean[indx_map["v"],0] = v_perturbed + noise
 
     # intialize the joint estimation variables
     if kwargs["joint_estimation"]:
         # a = kwargs.get('a', None)
-        statevec_bg[3*hdim:,0]       = statevec_nurged[3*hdim:,0]
-        statevec_ens_mean[3*hdim:,0] = statevec_nurged[3*hdim:,0]
+        statevec_bg[indx_map["smb"],0] = statevec_nurged[indx_map["smb"],0]
+        statevec_ens_mean[indx_map["smb"],0] = statevec_nurged[indx_map["smb"],0]
 
     return statevec_bg, statevec_ens, statevec_ens_mean, statevec_ens_full
 
