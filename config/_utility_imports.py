@@ -49,6 +49,7 @@ sys.path.insert(0, parallelization_dir)
 
 # import the necessary modules
 from tools import save_arrays_to_h5, extract_datasets_from_h5, save_all_data
+from tools import icesee_get_index
 from utils import UtilsFunctions
 from config_loader import load_yaml_to_dict, get_section
 

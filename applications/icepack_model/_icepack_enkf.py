@@ -13,6 +13,15 @@ from scipy.stats import multivariate_normal,norm
 
 # --- import run_simulation function from the available examples ---
 from synthetic_ice_stream._icepack_model import *
+from scipy import linalg
+
+# --- Utility imports ---
+sys.path.insert(0, '../../config')
+from _utility_imports import icesee_get_index
+
+# --- globally define the state variables ---
+global vec_inputs 
+vec_inputs = ['h','u','v','smb']
 
 # --- Forecast step ---
 def forecast_step_single(ens=None, ensemble=None, nd=None, **kwargs):
@@ -21,21 +30,8 @@ def forecast_step_single(ens=None, ensemble=None, nd=None, **kwargs):
                  of the velocity field
     Returns: ensemble: updated ensemble member
     """
-    # get the dimension of the state variables
-    params = kwargs["params"]
-    Q_err = kwargs["Q_err"]
-    hdim = nd // (params["num_state_vars"] + params["num_param_vars"])
-    state_block_size = hdim*params["num_state_vars"]
-
-
     #  call the run_model fun to push the state forward in time
     ensemble[:,ens] = run_model(ens, ensemble, nd, **kwargs)
-
-    # add noise to the state variables
-    noise = np.random.multivariate_normal(np.zeros(state_block_size), Q_err)
-
-    # update the ensemble with the noise
-    ensemble[:state_block_size,ens] = ensemble[:state_block_size,ens] + noise
 
     return ensemble[:,ens]
 
@@ -83,32 +79,39 @@ def background_step(k=None,statevec_bg=None, hdim=None, **kwargs):
     return statevec_bg
 
 # --- generate true state ---
-def generate_true_state(statevec_true=None, **kwargs):
+def generate_true_state(**kwargs):
     """generate the true state of the model"""
-    nd, nt = statevec_true.shape
-    nt = nt - 1
-    params = kwargs["params"]
-    hdim = nd // (params["num_state_vars"] + params["num_param_vars"])
 
     # unpack the **kwargs
-    a = kwargs.get('a', None)
-    b = kwargs.get('b', None)
+    a  = kwargs.get('a', None)
+    b  = kwargs.get('b', None)
     dt = kwargs.get('dt', None)
-    A = kwargs.get('A', None)
-    C = kwargs.get('C', None)
-    Q = kwargs.get('Q', None)
-    V = kwargs.get('V', None)
+    A  = kwargs.get('A', None)
+    C  = kwargs.get('C', None)
+    Q  = kwargs.get('Q', None)
+    V  = kwargs.get('V', None)
     h0 = kwargs.get('h0', None)
     u0 = kwargs.get('u0', None)
     solver = kwargs.get('solver', None)
+    statevec_true = kwargs["statevec_true"]
 
-    statevec_true[:hdim,0]       = h0.dat.data_ro
-    statevec_true[hdim:2*hdim,0] = u0.dat.data_ro[:,0]
-    statevec_true[2*hdim:3*hdim,0]     = u0.dat.data_ro[:,1]
+    params = kwargs["params"]
+    nt = params["nt"] - 1
+    
+    # --- define the state variables list ---
+    global vec_inputs 
+
+    # call the icesee_get_index function to get the indices of the state variables
+    vecs, indx_map = icesee_get_index(statevec_true, vec_inputs, **kwargs)
+    
+    # --- fetch the state variables ---
+    statevec_true[indx_map["h"],0] = h0.dat.data_ro
+    statevec_true[indx_map["u"],0] = u0.dat.data_ro[:,0]
+    statevec_true[indx_map["v"],0] = u0.dat.data_ro[:,1]
 
     # intialize the accumulation rate if joint estimation is enabled at the initial time step
     if kwargs["joint_estimation"]:
-        statevec_true[3*hdim:,0] = a.dat.data_ro
+        statevec_true[indx_map["smb"],0] = a.dat.data_ro
 
     h = h0.copy(deepcopy=True)
     u = u0.copy(deepcopy=True)
@@ -116,13 +119,13 @@ def generate_true_state(statevec_true=None, **kwargs):
         # call the ice stream model to update the state variables
         h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
 
-        statevec_true[:hdim,k+1]        = h.dat.data_ro
-        statevec_true[hdim:2*hdim,k+1]  = u.dat.data_ro[:,0]
-        statevec_true[2*hdim:3*hdim,k+1]      = u.dat.data_ro[:,1]
+        statevec_true[indx_map["h"],k+1] = h.dat.data_ro
+        statevec_true[indx_map["u"],k+1] = u.dat.data_ro[:,0]
+        statevec_true[indx_map["v"],k+1] = u.dat.data_ro[:,1]
 
         # update the accumulation rate if joint estimation is enabled
         if kwargs["joint_estimation"]:
-            statevec_true[3*hdim:,k+1] = a.dat.data_ro
+            statevec_true[indx_map["smb"],k+1] = a.dat.data_ro
 
     return statevec_true
 
@@ -301,28 +304,41 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
         statevec_ens[hdim:2*hdim,i] = u0.dat.data_ro[:,0]
         statevec_ens[2*hdim:3*hdim,i]     = u0.dat.data_ro[:,1]
 
+        # add some kind of perturbations  with mean 0 and variance 1
+        noise = np.random.normal(0, 0.1, hdim)
+        # noise = multivariate_normal.rvs(np.zeros(hdim), np.eye(hdim)*0.01)
+
+        statevec_ens[:hdim,i] = statevec_ens[:hdim,i]                   + noise
+        statevec_ens[hdim:2*hdim,i] = statevec_ens[hdim:2*hdim,i]       + noise
+        statevec_ens[2*hdim:3*hdim,i] = statevec_ens[2*hdim:3*hdim,i]   + noise
+        
+        # use the pseudo random field to perturb the state variables
+        # field = generate_random_field(kernel='gaussian',**kwargs)
+
+
         # initilize the accumulation rate if joint estimation is enabled
         if kwargs["joint_estimation"]:
             # add some spread to the intial accumulation rate
             initial_smb = statevec_nurged[3*hdim:,0]
             # create a normal distribution spread for the accumulation rate
-            spread = np.random.normal(0, 0.08, initial_smb.shape)
+            spread = np.random.normal(0, 0.01, initial_smb.shape)
             # print(f"[Debug]: spread and initail_smb shapes: {spread.shape}, {initial_smb.shape}")
             statevec_ens[3*hdim:,i] = initial_smb + spread
 
             # statevec_ens[3*hdim:,i] = statevec_nurged[3*hdim:,0]
 
     statevec_ens_full[:,:,0] = statevec_ens
-
+    noise = np.random.normal(0, 0.1, hdim)
+    # noise = multivariate_normal.rvs(np.zeros(hdim), np.eye(hdim)*0.01)
     # initialize the background state
-    statevec_bg[:hdim,0]       = h_perturbed
-    statevec_bg[hdim:2*hdim,0] = u_perturbed
-    statevec_bg[2*hdim:3*hdim,0]     = v_perturbed
+    statevec_bg[:hdim,0]            = h_perturbed + noise
+    statevec_bg[hdim:2*hdim,0]      = u_perturbed  + noise
+    statevec_bg[2*hdim:3*hdim,0]    = v_perturbed + noise
 
     # initialize the ensemble mean
-    statevec_ens_mean[:hdim,0]       = h_perturbed
-    statevec_ens_mean[hdim:2*hdim,0] = u_perturbed
-    statevec_ens_mean[2*hdim:3*hdim,0]     = v_perturbed
+    statevec_ens_mean[:hdim,0]           = h_perturbed + noise
+    statevec_ens_mean[hdim:2*hdim,0]     = u_perturbed + noise
+    statevec_ens_mean[2*hdim:3*hdim,0]   = v_perturbed + noise
 
     # intialize the joint estimation variables
     if kwargs["joint_estimation"]:
@@ -331,3 +347,57 @@ def initialize_ensemble(statevec_bg=None, statevec_ens=None, \
         statevec_ens_mean[3*hdim:,0] = statevec_nurged[3*hdim:,0]
 
     return statevec_bg, statevec_ens, statevec_ens_mean, statevec_ens_full
+
+
+def generate_random_field(kernel='gaussian',**kwargs):
+    """
+    Generate a 2D pseudorandom field with mean 0 and variance 1.
+    
+    Parameters:
+    - size: tuple of (height, width) for the field dimensions
+    - length_scale: float, controls smoothness (larger = smoother)
+    - num_points: int, number of grid points per dimension
+    - kernel: str, type of covariance kernel ('gaussian' or 'exponential')
+    
+    Returns:
+    - field: 2D numpy array with the random field
+    """
+
+    Lx, Ly = kwargs["Lx"], kwargs["Ly"]
+    nx, ny = kwargs["nx"], kwargs["ny"]
+
+    length_scale = 0.2*max(Lx,Ly)
+    
+    # Create grid
+    x = np.linspace(0, Lx, nx+1)
+    y = np.linspace(0, Ly, ny+1)
+    X, Y = np.meshgrid(x, y)
+    
+    # Compute distances between all points
+    coords = np.stack([X.flatten(), Y.flatten()], axis=1)
+    dist = np.sqrt(((coords[:, None, :] - coords[None, :, :]) ** 2).sum(axis=2))
+    
+    # Define covariance kernel
+    if kernel == 'gaussian':
+        cov = np.exp(-dist**2 / (2 * length_scale**2))
+    elif kernel == 'exponential':
+        cov = np.exp(-dist / length_scale)
+    else:
+        raise ValueError("Kernel must be 'gaussian' or 'exponential'")
+    
+    # Ensure positive definiteness and symmetry
+    cov = (cov + cov.T) / 2  # Make perfectly symmetric
+    cov += np.eye(cov.shape[0]) * 1e-6  # Add small jitter for stability
+    
+    # Generate random field using Cholesky decomposition
+    L = linalg.cholesky(cov, lower=True)
+    # z = np.random.normal(0, 1, size=num_points * num_points)
+    z = np.random.normal(0, 1, size=(nx+1)*(ny+1))
+    field_flat = L @ z
+    
+    # Reshape and normalize to mean 0, variance 1
+    # field = field_flat.reshape(num_points, num_points)
+    field = field_flat.reshape(nx+1, ny+1)
+    field = (field - np.mean(field)) / np.std(field)
+    
+    return field

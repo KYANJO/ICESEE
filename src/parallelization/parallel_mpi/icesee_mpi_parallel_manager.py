@@ -283,7 +283,9 @@ class ParallelManager:
                 # print(f"[Rank {rank_world}] Processing ensembles {start} to {stop}")
 
                 return None, None, sub_rank, sub_size, subcomm, None, rank_world, size_world, comm_world, start, stop
-    
+            else:
+                # raise an error if the number of ensembles is less than the number of processes
+                raise ValueError("Number of ensembles must be greater than the number of processes or use the default_run mode")
         return None
 
 
