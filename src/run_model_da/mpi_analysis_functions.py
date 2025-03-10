@@ -139,3 +139,60 @@ def analysis_enkf_update(ensemble_vec, shape_ens, X5, comm_world):
 
 
 # ============================ EnTKF functions ============================
+
+
+# ============================ Other functions ============================
+
+def gather_and_broadcast_data_default_run(updated_state, subcomm, sub_rank, comm_world, rank_world, params):
+    """
+    Gathers, processes, and broadcasts ensemble data across MPI processes.
+
+    Parameters:
+    - updated_state: dict, contains state variables to be gathered
+    - subcomm: MPI communicator for subgroups
+    - sub_rank: int, rank within the subcommunicator
+    - comm_world: MPI communicator for all processes
+    - rank_world: int, rank within the world communicator
+    - params: dict, contains necessary parameters like "total_state_param_vars"
+    - BM: object with a `bcast` method for broadcasting data
+
+    Returns:
+    - ensemble_vec: The processed and broadcasted ensemble data
+    """
+
+    # Step 1: Gather data from all sub-ranks
+    global_data = {key: subcomm.gather(data, root=0) for key, data in updated_state.items()}
+
+    # Step 2: Process on sub_rank 0
+    if sub_rank == 0:
+        for key in global_data:
+            global_data[key] = np.hstack(global_data[key])
+
+        # Stack all variables into a single array
+        stacked = np.hstack([global_data[key] for key in updated_state.keys()])
+        shape_ = np.array(stacked.shape, dtype=np.int32)
+    else:
+        shape_ = np.empty(2, dtype=np.int32)
+
+    # Step 3: Broadcast the shape to all processors
+    shape_ = comm_world.bcast(shape_, root=0)
+
+    # Step 4: Prepare the stacked array for non-root sub-ranks
+    if sub_rank != 0:
+        stacked = np.empty(shape_, dtype=np.float64)
+
+    # Step 5: Gather the stacked arrays from all sub-ranks
+    all_ens = comm_world.gather(stacked if sub_rank == 0 else None, root=0)
+
+    # Step 6: Final processing on world rank 0
+    if rank_world == 0:
+        all_ens = [arr for arr in all_ens if isinstance(arr, np.ndarray)]
+        ensemble_vec = np.column_stack(all_ens)
+        hdim = ensemble_vec.shape[0] // params["total_state_param_vars"]
+    else:
+        ensemble_vec = np.empty((shape_[0], params["Nens"]), dtype=np.float64)
+
+    # Step 7: Broadcast the final ensemble vector
+    ensemble_vec = BM.bcast(ensemble_vec, comm_world)
+
+    return ensemble_vec

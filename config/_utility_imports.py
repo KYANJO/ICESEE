@@ -73,7 +73,7 @@ if not flag_jupyter:
 
     # CL args.
     parser = ArgumentParser(description='ICESEE: Ice Sheet Parameter and State Estimation model')
-    parser.add_argument('--Nens', type=int, required=False, default=2, help='ensemble members')
+    parser.add_argument('--Nens', type=int, required=False, default=1, help='ensemble members')
     parser.add_argument('--verbose', action='store_true', help='verbose output')
     parser.add_argument('--default_run', action='store_true', help='default run')
     parser.add_argument('--sequential_run', action='store_true', help='sequential run')
@@ -146,8 +146,8 @@ if not flag_jupyter:
     })
 
     # --- incase CL args not provided ---
-    if Nens == 2:
-        params["Nens"] = int(float(enkf_params.get("Nens", 2)))
+    if Nens == 1:
+        params["Nens"] = int(float(enkf_params.get("Nens", 1)))
     
     if run_flag:
         execution_flag = params.get("execution_flag")
@@ -162,7 +162,6 @@ if not flag_jupyter:
     
     # update for time t
     params["t"] = np.linspace(0, int(float(modeling_params["num_years"])), params["nt"] + 1)
-    params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
 
     # model kwargs
     kwargs = {
@@ -173,6 +172,11 @@ if not flag_jupyter:
         "parameter_estimation": bool(enkf_params.get("parameter_estimation", False)),
         "state_estimation": bool(enkf_params.get("state_estimation", False)),
     }
+    # if kwargs["joint_estimation"]:
+    #     params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
+    # else:
+    #     params["total_state_param_vars"] = params["num_state_vars"]
+    params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
 
     # --- Observations Parameters ---
     obs_t, obs_idx, num_observations = UtilsFunctions(params).generate_observation_schedule(**kwargs)

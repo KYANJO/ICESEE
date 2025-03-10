@@ -224,18 +224,13 @@ def run_model(ens, ensemble, nd, **kwargs):
     # call the ice stream model to update the state variables
     h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
 
-    # update the ensemble members with the new state variables and noise 
-    ensemble[indx_map["h"],ens] = h.dat.data_ro
-    ensemble[indx_map["u"],ens] = u.dat.data_ro[:,0]
-    ensemble[indx_map["v"],ens] = u.dat.data_ro[:,1]
+    # return a list of the updated state variables
+    updated_state = {'h': h.dat.data_ro,
+                     'u': u.dat.data_ro[:,0],
+                     'v': u.dat.data_ro[:,1],
+                     'smb': a.dat.data_ro}
 
-    # now lets stack the state variables similar to [h,u,v,a]
-    stacked_ens = np.hstack([ensemble[indx_map["h"],ens],
-                            ensemble[indx_map["u"],ens],
-                            ensemble[indx_map["v"],ens],
-                            ensemble[indx_map["smb"],ens]])
-
-    return stacked_ens 
+    return updated_state
 
 
 

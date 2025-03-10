@@ -181,25 +181,26 @@ def icesee_get_index(vec, vec_inputs, **kwargs):
     else:
         comm = kwargs.get("comm_world", None)
 
-    dim_list = np.array(kwargs.get("dim_list", None)) // len(vec_inputs)  # Get the size of each variable slice
+    # print(f"dim_list: {kwargs['dim_list']}")
+    dim_list_param = np.array(kwargs.get('dim_list', None)) // len(vec_inputs)  # Get the size of each variable slice
     hdim = vec.shape[0] // len(vec_inputs)  # Compute the size of each variable in vec_inputs
 
     if comm is None:
         # Non-MPI case
         rank = 0
-        dim = dim_list[rank]
+        dim = dim_list_param[rank]
         offsets = [0]  # No offsets needed
     else:
         # MPI case
         size_world = kwargs.get("comm_world").Get_size()  # Get the total number of processors
         if params["even_distribution"] or (params["default_run"] and size_world <= params["Nens"]):
             rank = 0 # Set rank to 0 for even distribution
-            dim = dim_list[rank]
+            dim = dim_list_param[rank]
             offsets = [0]
         else:
             rank = comm.Get_rank()  # Get the rank of the current processor
-            dim = dim_list[rank]
-            offsets = np.cumsum(np.insert(dim_list, 0, 0))  # Compute offsets per processor
+            dim = dim_list_param[rank]
+            offsets = np.cumsum(np.insert(dim_list_param, 0, 0))  # Compute offsets per processor
 
     start_idx = offsets[rank]  # Get the start index of the current processor
    
@@ -215,6 +216,6 @@ def icesee_get_index(vec, vec_inputs, **kwargs):
         index_map[var] = np.arange(start, end)  # Store index range for easy fetching
         var_start += hdim  # Move to the next variable slice
 
-    return var_indices, index_map
-
+    local_size_per_rank = kwargs.get('dim_list', None)
+    return var_indices, index_map, local_size_per_rank[rank]
             

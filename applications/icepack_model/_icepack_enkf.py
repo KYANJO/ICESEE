@@ -31,9 +31,9 @@ def forecast_step_single(ens=None, ensemble=None, nd=None, **kwargs):
     Returns: ensemble: updated ensemble member
     """
     #  call the run_model fun to push the state forward in time
-    ensemble[:,ens] = run_model(ens, ensemble, nd, **kwargs)
-
-    return ensemble[:,ens]
+    # ensemble[:,ens] = run_model(ens, ensemble, nd, **kwargs)
+    return run_model(ens, ensemble, nd, **kwargs)
+    # return ensemble[:,ens]
 
 # --- Background step ---
 def background_step(k=None, **kwargs):
@@ -64,7 +64,7 @@ def background_step(k=None, **kwargs):
     global vec_inputs 
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map = icesee_get_index(statevec_bg, vec_inputs, **kwargs)
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_bg, vec_inputs, **kwargs)
 
     # fetch the state variables
     hb.dat.data[:]   = statevec_bg[indx_map["h"],k]
@@ -110,7 +110,7 @@ def generate_true_state(**kwargs):
     global vec_inputs 
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map = icesee_get_index(statevec_true, vec_inputs, **kwargs)
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_true, vec_inputs, **kwargs)
     
     # --- fetch the state variables ---
     statevec_true[indx_map["h"],0] = h0.dat.data_ro
@@ -170,7 +170,7 @@ def generate_nurged_state(**kwargs):
     global vec_inputs 
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map = icesee_get_index(statevec_nurged, vec_inputs, **kwargs)
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_nurged, vec_inputs, **kwargs)
 
     #  create a bump -100 to 0
     # h_indx = int(np.ceil(nurged_entries+1))
@@ -179,7 +179,8 @@ def generate_nurged_state(**kwargs):
         h_indx = int(np.ceil(nurged_entries+1))
     else:
         # 5% of the hdim so that the bump is not too large
-        h_indx = int(np.ceil(hdim*0.05))
+        h_indx = int(np.ceil(hdim*0.025))
+        # h_indx = int(np.ceil(0.05*nurged_entries+1))
    
     # u_indx = int(np.ceil(u_nurge_ic+1))
     u_indx = 1
@@ -213,9 +214,9 @@ def generate_nurged_state(**kwargs):
         u_perturbed = u.dat.data_ro[:,0]
         v_perturbed = u.dat.data_ro[:,1]
 
-    statevec_nurged[indx_map["h"],0]          = h_perturbed
-    statevec_nurged[indx_map["u"],0]          = u_perturbed
-    statevec_nurged[indx_map["v"],0]          = v_perturbed
+    statevec_nurged[indx_map["h"],0]   = h_perturbed
+    statevec_nurged[indx_map["u"],0]   = u_perturbed
+    statevec_nurged[indx_map["v"],0]   = v_perturbed
 
     h = Function(Q)
     u = Function(V)
@@ -258,7 +259,7 @@ def generate_nurged_state(**kwargs):
 
 
 # --- initialize the ensemble members ---
-def initialize_ensemble(**kwargs):
+def initialize_ensemble(ens, **kwargs):
     
     """initialize the ensemble members"""
 
@@ -278,9 +279,9 @@ def initialize_ensemble(**kwargs):
     u_nurge_ic      = kwargs.get('u_nurge_ic', None)
     nurged_entries  = kwargs.get('nurged_entries', None)
     statevec_ens    = kwargs["statevec_ens"]
-    statevec_bg     = kwargs["statevec_bg"]
-    statevec_ens_mean = kwargs["statevec_ens_mean"]
-    statevec_ens_full = kwargs["statevec_ens_full"]
+    # statevec_bg     = kwargs["statevec_bg"]
+    # statevec_ens_mean = kwargs["statevec_ens_mean"]
+    # statevec_ens_full = kwargs["statevec_ens_full"]
 
     # extract the ensemble size
     N = params["Nens"]
@@ -289,7 +290,9 @@ def initialize_ensemble(**kwargs):
     global vec_inputs 
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map = icesee_get_index(statevec_ens, vec_inputs, **kwargs)
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_ens, vec_inputs, **kwargs)
+
+    # print(f"min: {np.min(h0.dat.data_ro)} max: {np.max(h0.dat.data_ro)}")
 
     # call the nurged state to initialize the ensemble
     statevec_nurged = generate_nurged_state(**kwargs)
@@ -301,77 +304,172 @@ def initialize_ensemble(**kwargs):
 
     # initialize the ensemble members
     # h_indx = int(np.ceil(nurged_entries+1))
-    # h_indx = int(np.ceil(nurged_entries+1))
     hdim = vecs['h'].shape[0]
+    # print(f"[Debug]: hdim: {hdim} h_per shape: {h_perturbed.shape}")
     if 0.5*hdim > int(np.ceil(nurged_entries+1)):
         h_indx = int(np.ceil(nurged_entries+1))
     else:
         # 5% of the hdim so that the bump is not too large
-        h_indx = int(np.ceil(hdim*0.05))
+        h_indx = int(np.ceil(hdim*0.025))
+        # h_indx = int(np.ceil(0.05*nurged_entries+1))
 
-    for i in range(N):
-        # intial thickness perturbed by bump
-        # h_bump = np.random.uniform(-h_nurge_ic,0,h_indx)
-        # h_bump = np.random.normal(-h_nurge_ic,0.1,h_indx)
-        h_bump = np.linspace(-h_nurge_ic,0,h_indx)
-        # h_with_bump = h_bump + h_perturbed[:h_indx]
-        # h_perturbed = np.concatenate((h_with_bump, h_perturbed[h_indx:]))
-        h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
-        h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
-        statevec_ens[:hdim,i] = h_perturbed 
+    # create a bump -100 to 0
+    h_bump = np.linspace(-h_nurge_ic,0,h_indx)
+    h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
+    h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
+    statevec_ens[:hdim,ens] = h_perturbed 
 
-        # intial velocity unperturbed
-        # statevec_ens[hdim:2*hdim,i] = u_perturbed
-        # statevec_ens[2*hdim:3*hdim,i]     = v_perturbed
-        statevec_ens[indx_map["u"],i] = u0.dat.data_ro[:,0]
-        statevec_ens[indx_map["v"],i] = u0.dat.data_ro[:,1]
+    # add some kind of perturbations  with mean 0 and variance 1
+    noise = np.random.normal(0, 0.1, hdim)
+    statevec_ens[indx_map["h"],ens] = statevec_ens[indx_map["h"],ens] + noise
+    statevec_ens[indx_map["u"],ens] = u0.dat.data_ro[:,0] + noise
+    statevec_ens[indx_map["v"],ens] = u0.dat.data_ro[:,1] + noise
+    
+    initialized_state = {'h': statevec_ens[indx_map["h"],ens], 
+                         'u': statevec_ens[indx_map["u"],ens], 
+                         'v': statevec_ens[indx_map["v"],ens]}
+    # -- for joint estimation --
+    if kwargs["joint_estimation"]:
+        # initialized_state['smb'] = statevec_ens[indx_map["smb"],ens]
+        initialized_state['smb'] = statevec_nurged[indx_map["smb"],0] + np.random.normal(0, 0.01, hdim)
+
+    return initialized_state
+
+    
+    # # ------------------------
+    # for i in range(N):
+    #     # intial thickness perturbed by bump
+    #     # h_bump = np.random.uniform(-h_nurge_ic,0,h_indx)
+    #     # h_bump = np.random.normal(-h_nurge_ic,0.1,h_indx)
+    #     h_bump = np.linspace(-h_nurge_ic,0,h_indx)
+    #     # h_with_bump = h_bump + h_perturbed[:h_indx]
+    #     # h_perturbed = np.concatenate((h_with_bump, h_perturbed[h_indx:]))
+    #     h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
+    #     h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
+    #     statevec_ens[:hdim,i] = h_perturbed 
+
+    #     # intial velocity unperturbed
+    #     # statevec_ens[hdim:2*hdim,i] = u_perturbed
+    #     # statevec_ens[2*hdim:3*hdim,i]     = v_perturbed
+    #     statevec_ens[indx_map["u"],i] = u0.dat.data_ro[:,0]
+    #     statevec_ens[indx_map["v"],i] = u0.dat.data_ro[:,1]
         
+
+    #     # add some kind of perturbations  with mean 0 and variance 1
+    #     noise = np.random.normal(0, 0.1, hdim)
+    #     # noise = multivariate_normal.rvs(np.zeros(hdim), np.eye(hdim)*0.01)
+
+    #     statevec_ens[indx_map["h"],i] = statevec_ens[indx_map["h"],i] + noise
+    #     statevec_ens[indx_map["u"],i] = statevec_ens[indx_map["u"],i] + noise
+    #     statevec_ens[indx_map["v"],i] = statevec_ens[indx_map["v"],i] + noise
+        
+    #     # use the pseudo random field to perturb the state variables
+    #     # field = generate_random_field(kernel='gaussian',**kwargs)
+
+
+    #     # initilize the accumulation rate if joint estimation is enabled
+    #     if kwargs["joint_estimation"]:
+    #         # add some spread to the intial accumulation rate
+    #         initial_smb = statevec_nurged[indx_map["smb"],0]
+
+    #         # create a normal distribution spread for the accumulation rate
+    #         spread = np.random.normal(0, 0.01, initial_smb.shape)
+    #         # print(f"[Debug]: spread and initail_smb shapes: {spread.shape}, {initial_smb.shape}")
+    #         statevec_ens[indx_map["smb"],i] = initial_smb + spread
+
+    #         # statevec_ens[3*hdim:,i] = statevec_nurged[3*hdim:,0]
+
+    # statevec_ens_full[:,:,0] = statevec_ens
+    # noise = np.random.normal(0, 0.1, hdim)
+    # # noise = multivariate_normal.rvs(np.zeros(hdim), np.eye(hdim)*0.01)
+    # # initialize the background state
+    # statevec_bg[indx_map["h"],0] = h_perturbed + noise
+    # statevec_bg[indx_map["u"],0] = u_perturbed + noise
+    # statevec_bg[indx_map["v"],0] = v_perturbed + noise
+
+    # # initialize the ensemble mean
+    # statevec_ens_mean[indx_map["h"],0] = h_perturbed + noise
+    # statevec_ens_mean[indx_map["u"],0] = u_perturbed + noise
+    # statevec_ens_mean[indx_map["v"],0] = v_perturbed + noise
+
+    # # intialize the joint estimation variables
+    # if kwargs["joint_estimation"]:
+    #     # a = kwargs.get('a', None)
+    #     statevec_bg[indx_map["smb"],0] = statevec_nurged[indx_map["smb"],0]
+    #     statevec_ens_mean[indx_map["smb"],0] = statevec_nurged[indx_map["smb"],0]
+
+    # return statevec_bg, statevec_ens, statevec_ens_mean, statevec_ens_full
+
+# debug function
+def initialize_ensemble_debug(color,**kwargs):
+    # unpack the **kwargs
+    h0 = kwargs.get('h0', None)
+    u0 = kwargs.get('u0', None)
+    params = kwargs["params"]
+    # a  = kwargs.get('a', None)
+    b  = kwargs.get('b', None)
+    dt = kwargs.get('dt', None)
+    A  = kwargs.get('A', None)
+    C  = kwargs.get('C', None)
+    Q  = kwargs.get('Q', None)
+    V  = kwargs.get('V', None)
+    solver = kwargs.get('solver', None)
+    h_nurge_ic      = kwargs.get('h_nurge_ic', None)
+    u_nurge_ic      = kwargs.get('u_nurge_ic', None)
+    nurged_entries  = kwargs.get('nurged_entries', None)
+    statevec_ens    = kwargs["statevec_ens"]
+    from mpi4py import MPI
+
+    comm = kwargs.get("comm_world", None)
+    subcomm = kwargs.get("subcomm", None)
+    subrank = subcomm.Get_rank()
+    rank_world = comm.Get_rank()
+
+    # extract the ensemble size
+    N = params["Nens"]
+
+     # --- define the state variables list ---
+    global vec_inputs 
+
+    # call the icesee_get_index function to get the indices of the state variables
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_ens, vec_inputs, **kwargs)
+
+    global_h0 = subcomm.gather(h0.dat.data_ro, root=0)
+    global_u = subcomm.gather(u0.dat.data_ro[:,0], root=0)
+    global_v = subcomm.gather(u0.dat.data_ro[:,1], root=0)
+    global_smb = subcomm.gather(kwargs["a"].dat.data_ro, root=0)
+    #stacked_state = np.hstack([global_h0,global_u,global_v])
+    if subrank == 0:
+        global_h0 = np.hstack(global_h0) 
+        global_u = np.hstack(global_u)
+        global_v = np.hstack(global_v)
+        global_smb = np.hstack(global_smb)
 
         # add some kind of perturbations  with mean 0 and variance 1
-        noise = np.random.normal(0, 0.1, hdim)
-        # noise = multivariate_normal.rvs(np.zeros(hdim), np.eye(hdim)*0.01)
+        noise = np.random.normal(0, 0.1, global_h0.shape)
+        global_h0 = global_h0 + noise
+        global_u = global_u + noise
+        global_v = global_v + noise
+        # stack all the state variables
+        stacked_state = np.hstack([global_h0,global_u,global_v,global_smb])
+        shape_ = stacked_state.shape
+    else:
+        shape_ = np.empty(2,dtype=int)
 
-        statevec_ens[indx_map["h"],i] = statevec_ens[indx_map["h"],i] + noise
-        statevec_ens[indx_map["u"],i] = statevec_ens[indx_map["u"],i] + noise
-        statevec_ens[indx_map["v"],i] = statevec_ens[indx_map["v"],i] + noise
-        
-        # use the pseudo random field to perturb the state variables
-        # field = generate_random_field(kernel='gaussian',**kwargs)
+    shape_ = comm.bcast(shape_, root=0)
+    
+    if subrank != 0:
+        stacked_state = np.empty(shape_,dtype=float)
 
-
-        # initilize the accumulation rate if joint estimation is enabled
-        if kwargs["joint_estimation"]:
-            # add some spread to the intial accumulation rate
-            initial_smb = statevec_nurged[indx_map["smb"],0]
-
-            # create a normal distribution spread for the accumulation rate
-            spread = np.random.normal(0, 0.01, initial_smb.shape)
-            # print(f"[Debug]: spread and initail_smb shapes: {spread.shape}, {initial_smb.shape}")
-            statevec_ens[indx_map["smb"],i] = initial_smb + spread
-
-            # statevec_ens[3*hdim:,i] = statevec_nurged[3*hdim:,0]
-
-    statevec_ens_full[:,:,0] = statevec_ens
-    noise = np.random.normal(0, 0.1, hdim)
-    # noise = multivariate_normal.rvs(np.zeros(hdim), np.eye(hdim)*0.01)
-    # initialize the background state
-    statevec_bg[indx_map["h"],0] = h_perturbed + noise
-    statevec_bg[indx_map["u"],0] = u_perturbed + noise
-    statevec_bg[indx_map["v"],0] = v_perturbed + noise
-
-    # initialize the ensemble mean
-    statevec_ens_mean[indx_map["h"],0] = h_perturbed + noise
-    statevec_ens_mean[indx_map["u"],0] = u_perturbed + noise
-    statevec_ens_mean[indx_map["v"],0] = v_perturbed + noise
-
-    # intialize the joint estimation variables
-    if kwargs["joint_estimation"]:
-        # a = kwargs.get('a', None)
-        statevec_bg[indx_map["smb"],0] = statevec_nurged[indx_map["smb"],0]
-        statevec_ens_mean[indx_map["smb"],0] = statevec_nurged[indx_map["smb"],0]
-
-    return statevec_bg, statevec_ens, statevec_ens_mean, statevec_ens_full
-
+    all_colors = comm.gather(stacked_state if subrank == 0 else None, root=0)
+    if rank_world == 0:
+        all_colors = [arr for arr in all_colors if arr is not None]
+        statevec_ens = np.column_stack(all_colors)
+        # print(f"[Debug]: all_colors shape: {all_colors.shape}")
+    else: 
+        statevec_ens = np.empty((shape_[0], params['Nens']),dtype=float)
+    comm.Bcast(statevec_ens, root=0)
+    return statevec_ens
 
 def generate_random_field(kernel='gaussian',**kwargs):
     """
