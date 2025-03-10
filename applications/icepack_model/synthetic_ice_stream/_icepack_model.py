@@ -197,15 +197,7 @@ def run_model(ens, ensemble, nd, **kwargs):
     global vec_inputs 
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map = icesee_get_index(ensemble, vec_inputs, **kwargs)
-   
-    ndim = nd // (params["num_state_vars"] + params["num_param_vars"])
-    state_block_size = ndim*params["num_state_vars"]
-    
-    # unpack h,u,v from the ensemble member
-    h_vec = ensemble[indx_map["h"],ens]
-    u_vec = ensemble[indx_map["u"],ens]
-    v_vec = ensemble[indx_map["v"],ens]
+    vecs, indx_map, dim_per_proc = icesee_get_index(ensemble, vec_inputs, **kwargs)
 
     # joint estimation
     if kwargs["joint_estimation"]:
@@ -223,11 +215,11 @@ def run_model(ens, ensemble, nd, **kwargs):
 
     # create firedrake functions from the ensemble members
     h = Function(Q)
-    h.dat.data[:] = h_vec.copy()
+    h.dat.data[:] = ensemble[indx_map["h"],ens]
 
     u = Function(V)
-    u.dat.data[:,0] = u_vec.copy()
-    u.dat.data[:,1] = v_vec.copy()
+    u.dat.data[:,0] = ensemble[indx_map["u"],ens]
+    u.dat.data[:,1] = ensemble[indx_map["v"],ens]
 
     # call the ice stream model to update the state variables
     h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
@@ -237,7 +229,13 @@ def run_model(ens, ensemble, nd, **kwargs):
     ensemble[indx_map["u"],ens] = u.dat.data_ro[:,0]
     ensemble[indx_map["v"],ens] = u.dat.data_ro[:,1]
 
-    return ensemble[:,ens]
+    # now lets stack the state variables similar to [h,u,v,a]
+    stacked_ens = np.hstack([ensemble[indx_map["h"],ens],
+                            ensemble[indx_map["u"],ens],
+                            ensemble[indx_map["v"],ens],
+                            ensemble[indx_map["smb"],ens]])
+
+    return stacked_ens 
 
 
 
