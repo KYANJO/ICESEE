@@ -309,22 +309,43 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
         if params["even_distribution"] or (params["default_run"] and size_world <= params["Nens"]):
             if rank_world == 0:
                 print("Initializing the ensemble ...")
-                model_kwargs.update({"statevec_ens":np.zeros([params["nd"], params["Nens"]]),
-                                     "statevec_ens_mean":np.zeros([params["nd"], params["nt"] + 1]),
-                                     "statevec_ens_full":np.zeros([params["nd"], params["Nens"], params["nt"] + 1]),
-                                     "statevec_bg":np.zeros([params["nd"], params["nt"] + 1])})
-                ensemble_bg, ensemble_vec, ensemble_vec_mean, ensemble_vec_full = model_module.initialize_ensemble(**model_kwargs)
+                model_kwargs.update({"statevec_ens":np.zeros([params["nd"], params["Nens"]])})
+                
+                # get the ensemble matrix   
+                ensemble_vec = np.zeros_like(model_kwargs["statevec_ens"])
+                for ens in range(params["Nens"]):
+                    data = model_module.intialize_ensemble(ens,**model_kwargs)
+
+                    # iterate over the data and update the ensemble
+                    for key, value in data.items():
+                        ensemble_vec[key,ens] = value
+
+                shape_ens = np.array(ensemble_vec.shape,dtype=np.int32)
+                ensemble_vec_mean = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
+                ensemble_vec_full = np.empty((params["nd"],params["Nens"],params["nt"]+1),dtype=np.float64)
+                ensemble_bg = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
+                ensemble_vec_mean[:,0] = np.mean(ensemble_vec, axis=1)
+                ensemble_vec_full[:,:,0] = ensemble_vec
+                ensemble_bg[:,0] = ensemble_vec_mean[:,0]
             else:
                 ensemble_bg = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
                 ensemble_vec = np.empty((params["nd"],params["Nens"]),dtype=np.float64)
                 ensemble_vec_mean = np.empty((params["nd"],params["nt"]+1),dtype=np.float64)
                 ensemble_vec_full = np.empty((params["nd"],params["Nens"],params["nt"]+1),dtype=np.float64)
+                shape_ens = np.empty(2,dtype=np.int32)
 
-            # Bcast the ensemble
-            comm_world.Bcast(ensemble_bg, root=0)
-            comm_world.Bcast(ensemble_vec, root=0)
-            comm_world.Bcast(ensemble_vec_mean, root=0)
-            comm_world.Bcast(ensemble_vec_full, root=0)
+            if params["even_distribution"]:
+                # Bcast the ensemble
+                comm_world.Bcast(ensemble_bg, root=0)
+                comm_world.Bcast(ensemble_vec, root=0)
+                comm_world.Bcast(ensemble_vec_mean, root=0)
+                comm_world.Bcast(ensemble_vec_full, root=0)
+            else:
+                # broadcast the shape of the ensemble
+                shape_ens = comm_world.bcast(shape_ens, root=0)
+                # write the ensemble to the file
+                ens_mean = ParallelManager().compute_mean_matrix_from_root(ensemble_vec, shape_ens[0], params['Nens'], comm_world, root=0)
+                parallel_write_full_ensemble_from_root(0, ens_mean, params,ensemble_vec,comm_world)
 
             hdim = params["nd"] // params["total_state_param_vars"]
             # print(f"Rank: {rank_world}, min ensemble: {np.min(ensemble_vec[hdim,:])}, max ensemble: {np.max(ensemble_vec[hdim,:])}")
@@ -337,12 +358,47 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 # debug
                 sub_shape = model_kwargs['dim_list'][sub_rank]
                 model_kwargs.update({"statevec_ens":np.zeros((sub_shape, params["Nens"]))})
-                # ens = color
-                # initialilaized_state = model_module.initialize_ensemble(ens,**model_kwargs)
-                # initial_data = {}
-                # for key,data in initialilaized_state.items():
-                #     initial_data[key] = subcomm.gather(data, root=0)
+                ensemble_vec, shape_ens  = model_module.initialize_ensemble_debug(color,**model_kwargs)
+                ens_mean = ParallelManager().compute_mean_matrix_from_root(ensemble_vec, shape_ens[0], params['Nens'], comm_world, root=0)
+                parallel_write_full_ensemble_from_root(0, ens_mean, params,ensemble_vec,comm_world)
+                # -----------------------------------------------------
 
+                ens = color
+                # model_kwargs.update({"statevec_ens":np.zeros((model_kwargs['global_shape'], params["Nens"]))})
+                # initialilaized_state = model_module.initialize_ensemble(ens,**model_kwargs)
+                # ensemble_vec, shape_ens = gather_and_broadcast_data_default_run(initialilaized_state, subcomm, sub_rank, comm_world, rank_world, params)
+                # ens_mean = ParallelManager().compute_mean_matrix_from_root(ensemble_vec, shape_ens[0], params['Nens'], comm_world, root=0)
+                # parallel_write_full_ensemble_from_root(0, ens_mean, params,ensemble_vec,comm_world)
+                # ensemble_vec = BM.bcast(ensemble_vec, comm_world)
+                
+                # initial_data = {key: subcomm.gather(value, root=0) for key, value in initialilaized_state.items()}
+
+                # if sub_rank == 0:
+                #     for key in initial_data:
+                #         initial_data[key] = np.hstack(initial_data[key])
+                        
+                #     # stack all variables together into a single array
+                #     stacked = np.hstack([initial_data[key] for key in initialilaized_state.keys()])
+                #     shape_ens = np.array(stacked.shape,dtype=np.int32)
+                # else:
+                #     shape_ens = np.empty(2,dtype=np.int32)
+
+                # # broadcast the shape of the initialized ensemble
+                # shape_ens = comm_world.bcast(shape_ens, root=0)
+
+                # if sub_rank != 0:
+                #     stacked = np.empty(shape_ens,dtype=np.float64)
+
+                # all_init = comm_world.gather(stacked if sub_rank == 0 else None, root=0)
+
+                # if rank_world == 0:
+                #     all_init = [arr for arr in all_init if isinstance(arr, np.ndarray)]
+                #     ensemble_vec = np.column_stack(all_init)
+                #     print(f"Shape of the ensemble: {ensemble_vec.shape}")
+                
+                # exit()
+
+                    
                 # if sub_rank == 0:
                 #     for key in initial_data:
                 #         initial_data[key] = np.hstack(initial_data[key])
@@ -382,77 +438,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 # ensemble_bg[:,0] = ensemble_vec_mean[:,0]
 
 
-                # _________________________________________
-                ensemble_vec  = model_module.initialize_ensemble_debug(color,**model_kwargs)
-                parallel_write_full_ensemble_from_root(0, params,ensemble_vec,comm_world)
-                # parallel_write_full_ensemble_from_root()
-                ensemble = comm_world.bcast(ensemble_vec, root=0)
-                # ensemble = ensemble_vec
-                # hdim = ensemble_vec.shape[0] // params["total_state_param_vars"]
-                # print(f"Rank: {rank_world}, min ensemble: {np.min(ensemble_vec[hdim,:])}, max ensemble: {np.max(ensemble_vec[hdim,:])}")
-                # print(f"ensemble_vec shape: {ensemble_vec.shape}")
+               
                 
-                ensemble_vec_full = np.empty((model_kwargs["global_shape"],params["Nens"],params["nt"]+1),dtype=np.float64)
-                ensemble_vec_mean = np.empty((model_kwargs["global_shape"],params["nt"]+1),dtype=np.float64)
-                ensemble_bg = np.empty((model_kwargs["global_shape"],params["nt"]+1),dtype=np.float64)
-                # parallel_write_full_ensemble_from_root(ensemble_vec,ensemble_vec_full,comm_world,0)
-
-
-                
-                
-                ensemble_vec_mean[:,0] = np.mean(ensemble, axis=1)
-                ensemble_vec_full[:,:,0] = ensemble
-                ensemble_bg[:,0] = ensemble_vec_mean[:,0]
-                # exit()
-                # ______________________________
-
-
-                # print(f"dim_list: {dim_list}")
-                # subcomm.Barrier()
-                # sub_shape = model_kwargs['dim_list'][sub_rank]
-                # model_kwargs.update({"statevec_ens":np.zeros([model_kwargs["global_shape"], params["Nens"]]),
-                #                     "statevec_ens_mean":np.zeros([model_kwargs["global_shape"], params["nt"] + 1]),
-                #                     "statevec_ens_full":np.zeros([model_kwargs["global_shape"], params["Nens"], params["nt"] + 1]),
-                #                     "statevec_bg":np.zeros([model_kwargs["global_shape"], params["nt"] + 1])})
-                # ensemble_bg, ensemble_vec, ensemble_vec_mean, ensemble_vec_full = model_module.initialize_ensemble(**model_kwargs)
-                # # gather from every subcomm to rank 0
-                # gathered_ensemble = subcomm.gather(ensemble_vec[:sub_shape,:], root=0)
-                # # gathered_ensemble_mean = subcomm.gather(ensemble_vec_mean[:sub_shape,:], root=0)
-                # # gathered_ensemble_full = subcomm.gather(ensemble_vec_full[:sub_shape,color,:], root=0)
-            
-                # if sub_rank == 0:
-                #     # print(f"Shape of the ensemble: {[arr.shape for arr in gathered_ensemble]}")
-                #     gathered_ensemble = np.vstack(gathered_ensemble)
-                # else:
-                #     gathered_ensemble = np.empty((model_kwargs["global_shape"],params["Nens"]),dtype=np.float64)
-
-                # ensemble_vec = subcomm.bcast(gathered_ensemble, root=0)
-                #     gathered_ensemble = np.hstack(gathered_ensemble)
-                    
-                # gather results from all subcomm to rank 0
-                # ensemble_vec = comm_world.gather(gathered_ensemble, root=0)
-                # if rank_world == 0:
-                    # print(f"{[arr.shape for arr in ensemble_vec if isinstance(arr, np.ndarray)]}")
-                #     ensemble_vec = [arr for arr in ensemble_vec if isinstance(arr, np.ndarray)]
-                #     # ensemble_vec_mean = [arr for arr in ensemble_vec_mean if isinstance(arr, np.ndarray)]
-                #     # ensemble_vec_full = [arr for arr in ensemble_vec_full if isinstance(arr, np.ndarray)]
-                #     ensemble_vec = np.column_stack(ensemble_vec)
-                #     ensemble_vec_mean[:,0] = np.mean(ensemble_vec, axis=1)
-                #     ensemble_vec_full[:,:,0] = ensemble_vec
-                # else:
-                #     ensemble_vec = np.empty((model_kwargs["global_shape"],params["Nens"]),dtype=np.float64)
-                #     ensemble_vec_mean = np.empty((model_kwargs["global_shape"],params["nt"]+1),dtype=np.float64)
-                #     ensemble_vec_full = np.empty((model_kwargs["global_shape"],params["Nens"],params["nt"]+1),dtype=np.float64)
-
-                # comm_world.Bcast(ensemble_vec, root=0)
-                # comm_world.Bcast(ensemble_vec_mean, root=0)
-                # comm_world.Bcast(ensemble_vec_full, root=0)
-
-                # # print(f"Rank:{rank_world}, vec_mean shape: {ensemble_vec_mean.shape}")
-
-                # hdim = ensemble_vec.shape[0] // params["total_state_param_vars"]
-                # print(F"color: {color}, rank: {rank_world}, subrank: {sub_rank}, min ensemble: {np.min(ensemble_vec[hdim,:])}, max ensemble: {np.max(ensemble_vec[hdim,:])}")
-                # print(f"rank: {rank_world}, subrank: {sub_rank}, min ensemble: {np.min(ensemble_vec[hdim,:])}, max ensemble: {np.max(ensemble_vec[hdim,:])}")
                 
             elif params["sequential_run"]:
                 comm_world.Barrier()
@@ -764,10 +751,15 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
                             # Ensure all ranks in the subcommunicator are synchronized before running
                             subcomm.Barrier()
+                            # ---- read from file ----
+                            input_file = f"_modelrun_datasets/ensemble_data.h5"
+                            with h5py.File(input_file, "r", driver="mpio", comm=subcomm) as f:
+                                ensemble_vec = f["ensemble"][:,:,k]
+                            # ---- end of read from file ----
 
                             # Call the forecast step function
                             ens = ensemble_id
-                            ensemble_vec[:,ens] = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, **model_kwargs)
+                            ensemble_vec[:,ens] = model_module.forecast_step_single(ensemble=ensemble_vec[:,ens],**model_kwargs)
                             #  add time evolution noise to the ensemble
                             # if k == 0:
                             #     # model noise, q0
@@ -816,18 +808,15 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 elif Nens < size_world:
                     # Ensure all ranks in subcomm are in sync 
                     subcomm.Barrier()
+                    ens = color # each subcomm has a unique color
                     # ---- read from file ----
                     input_file = f"_modelrun_datasets/ensemble_data.h5"
                     with h5py.File(input_file, "r", driver="mpio", comm=subcomm) as f:
-                        ensemble_vec = f["ensemble"][:,color,k]
+                        ensemble_vec = f["ensemble"][:,ens,k]
+                    # ---- end of read from file ----
 
-                        # get column data for each color
-                        # ensemble_vec = ensemble[:,color]
-                        # ensemble_vec = ensemble[:,color:k]
-                    # print(f"Rank: {rank_world}, ensemble shape: {ensemble_vec.shape}")
                     # Call the forecast step fucntion- Each subcomm runs the function indepadently
-                    ens = color # each subcomm has a unique color
-                    updated_state = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, **model_kwargs)
+                    updated_state = model_module.forecast_step_single(ensemble=ensemble_vec, **model_kwargs)
 
                     # ensemble_vec = gather_and_broadcast_data_default_run(updated_state, subcomm, sub_rank, comm_world, rank_world, params)
                     # ensemble_vec = BM.bcast(ensemble_vec, comm_world)
@@ -835,23 +824,27 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                     global_data = {key: subcomm.gather(data, root=0) for key, data in updated_state.items()}
 
                     # Step 2: Process on sub_rank 0
+                    key_list = list(global_data.keys())
+                    state_keys = key_list[:params["num_state_vars"]] # Get the state variables to add noise
                     if sub_rank == 0:
-                        for key in global_data:
+                        # for key in global_data:
+                        for key in key_list:
                             global_data[key] = np.hstack(global_data[key])
                             if model_kwargs["joint_estimation"] or params["localization_flag"]:
                                 hdim = global_data[key].shape[0] // params["total_state_param_vars"]
                             else:
                                 hdim = global_data[key].shape[0] // params["num_state_vars"]
                             state_block_size = hdim * params["num_state_vars"]  # Compute the state block size
-
-                            # Add process noise to the ensembles
-                            Q_err = Q_err[:state_block_size, :state_block_size]
-                            q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
-                            global_data[key][:state_block_size] = global_data[key][:state_block_size] + q0[:state_block_size]
-
+                            # Add process noise to the ensembles variables only
+                            if key in state_keys:
+                                Q_err = Q_err[:state_block_size, :state_block_size]
+                                q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                                global_data[key][:state_block_size] = global_data[key][:state_block_size] + q0[:state_block_size]
+                            
                         # Stack all variables into a single array
                         stacked = np.hstack([global_data[key] for key in updated_state.keys()])
                         shape_ = np.array(stacked.shape, dtype=np.int32)
+
                     else:
                         shape_ = np.empty(2, dtype=np.int32)
 
@@ -869,6 +862,17 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                     if rank_world == 0:
                         all_ens = [arr for arr in all_ens if isinstance(arr, np.ndarray)]
                         ensemble_vec = np.column_stack(all_ens)
+
+                        # add some noise to the ensemble
+                        # if model_kwargs["joint_estimation"] or params["localization_flag"]:
+                        #     hdim = ensemble_vec.shape[0] // params["total_state_param_vars"]
+                        # else:
+                        #     hdim = ensemble_vec.shape[0] // params["num_state_vars"]
+                        # state_block_size = hdim * params["num_state_vars"]  # Compute the state block size
+                        # Q_err = Q_err[:state_block_size, :state_block_size]
+                        # q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                        # ensemble_vec[:state_block_size, :] = ensemble_vec[:state_block_size, :] + q0[:state_block_size,np.newaxis]
+
                         # hdim = ensemble_vec.shape[0] // params["total_state_param_vars"]
                         shape_ens = np.array(ensemble_vec.shape, dtype=np.int32)
                     else:
@@ -910,12 +914,13 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             # compute the X5 matrix
                             X5 = EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d)
                             y_i = np.sum(X5, axis=1)
-                            ensemble_vec_mean[:,k+1] = (1/Nens)*(ensemble_vec @ y_i.reshape(-1,1)).ravel()
+                            # ensemble_vec_mean[:,k+1] = (1/Nens)*(ensemble_vec @ y_i.reshape(-1,1)).ravel()
+                            ens_mean = (1/Nens)*(ensemble_vec @ y_i.reshape(-1,1)).ravel()
                     else:
                         X5 = np.empty((Nens, Nens))
 
                     # call the analysis update function
-                    ensemble_vec = analysis_enkf_update(k,params,ensemble_vec, shape_ens, X5, comm_world)
+                    ensemble_vec = analysis_enkf_update(k,ens_mean,params,ensemble_vec, shape_ens, X5, comm_world)
                 
                     # update the observation index
                     km += 1
@@ -923,20 +928,18 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                     # inflate the ensemble
                     ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
 
-                    # ensemble_vec = copy.deepcopy(ensemble_vec[:,:])
                 else: 
                     if Nens < size_world:
-                        # ensemble_vec = BM.bcast(ensemble_vec, comm_world)
-                        parallel_write_full_ensemble_from_root(k+1,params,ensemble_vec,comm_world)
+                        parallel_write_full_ensemble_from_root(k+1,ens_mean, params,ensemble_vec,comm_world)
                         # parallel_write_full_ensemble_from_root(ensemble_vec,ensemble_vec_full,comm_world,k)
 
-                # save the ensemble    
-                if rank_world == 0:
-                    # ensemble_vec_full[:,:,k+1] = ensemble_vec[:,:]     
-                    ensemble_vec_mean[:,k+1]   = ens_mean      
-                else:
-                    # ensemble_vec_full = np.empty((shape_ens[0],Nens,params["nt"]+1), dtype=np.float64)
-                    ensemble_vec_mean = np.empty((shape_ens[0],params["nt"]+1), dtype=np.float64)
+                # # save the ensemble    
+                # if rank_world == 0:
+                #     # ensemble_vec_full[:,:,k+1] = ensemble_vec[:,:]     
+                #     ensemble_vec_mean[:,k+1]   = ens_mean      
+                # else:
+                #     # ensemble_vec_full = np.empty((shape_ens[0],Nens,params["nt"]+1), dtype=np.float64)
+                #     ensemble_vec_mean = np.empty((shape_ens[0],params["nt"]+1), dtype=np.float64)
 
                 # free up memory
                 # del gathered_ensemble_global; gc.collect()
@@ -1125,25 +1128,40 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
     # ====== load data to be written to file ======
     # print("Saving data ...")
-    save_all_data(
-        enkf_params=enkf_params,
-        nofilter=True,
-        t=kwargs["t"], b_io=np.array([b_in,b_out]),
-        Lxy=np.array([Lx,Ly]),nxy=np.array([nx,ny]),
-        ensemble_true_state=ensemble_true_state,
-        ensemble_nurged_state=ensemble_nurged_state, 
-        obs_max_time=np.array([params["obs_max_time"]]),
-        obs_index=kwargs["obs_index"],
-        w=hu_obs
-    )
+    if params["even_distribution"]:
+        save_all_data(
+            enkf_params=enkf_params,
+            nofilter=True,
+            t=kwargs["t"], b_io=np.array([b_in,b_out]),
+            Lxy=np.array([Lx,Ly]),nxy=np.array([nx,ny]),
+            ensemble_true_state=ensemble_true_state,
+            ensemble_nurged_state=ensemble_nurged_state, 
+            obs_max_time=np.array([params["obs_max_time"]]),
+            obs_index=kwargs["obs_index"],
+            w=hu_obs,
+            run_mode= np.array([params["execution_flag"]])
+        )
 
-    # --- Save final data ---
-    save_all_data(
-        enkf_params=enkf_params,
-        ensemble_vec_full=ensemble_vec_full,
-        ensemble_vec_mean=ensemble_vec_mean,
-        ensemble_bg=ensemble_bg
-    )
+        # --- Save final data ---
+        save_all_data(
+            enkf_params=enkf_params,
+            ensemble_vec_full=ensemble_vec_full,
+            ensemble_vec_mean=ensemble_vec_mean,
+            ensemble_bg=ensemble_bg
+        )
+    else:
+        save_all_data(
+            enkf_params=enkf_params,
+            nofilter=True,
+            t=kwargs["t"], b_io=np.array([b_in,b_out]),
+            Lxy=np.array([Lx,Ly]),nxy=np.array([nx,ny]),
+            ensemble_true_state=ensemble_true_state,
+            ensemble_nurged_state=ensemble_nurged_state, 
+            obs_max_time=np.array([params["obs_max_time"]]),
+            obs_index=kwargs["obs_index"],
+            w=hu_obs,
+            run_mode= np.array([params["execution_flag"]])
+        )
 
     # ─────────────────────────────────────────────────────────────
     #  End Timer and Aggregate Elapsed Time Across Processors

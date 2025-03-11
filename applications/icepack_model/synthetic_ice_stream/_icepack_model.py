@@ -174,7 +174,7 @@ def Icepack(solver, h, u, a, b, dt, h0, **kwargs):
     return h, u
 
 # --- Run model for the icepack model ---
-def run_model(ens, ensemble, nd, **kwargs):
+def run_model(ensemble, **kwargs):
     """des: icepack model function
         inputs: ensemble - current state of the model
                 **kwargs - additional arguments for the model
@@ -231,8 +231,12 @@ def run_model(ens, ensemble, nd, **kwargs):
     # return a list of the updated state variables
     updated_state = {'h': h.dat.data_ro,
                      'u': u.dat.data_ro[:,0],
-                     'v': u.dat.data_ro[:,1],
-                     'smb': a.dat.data_ro}
+                     'v': u.dat.data_ro[:,1]}
+    
+    if kwargs["joint_estimation"]:
+        updated_state['smb'] = a_vec
+    # else:
+    #     updated_state['smb'] = a.dat.data_ro
 
     return updated_state
 

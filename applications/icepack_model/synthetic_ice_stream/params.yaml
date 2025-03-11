@@ -49,13 +49,12 @@ enkf-parameters:
 
   # estimation flags
   joint_estimation: True # joint estimation flag: True, False
-  state_estimation: False  # state estimation flag: True, False
-  parameter_estimation: False # parameter estimation flag: True, False
+  parameter_estimation: True # parameter estimation flag: True, False
 
   # nurged parameters
-  h_nurge_ic: 60         # nurged increment for initial thickness
+  h_nurge_ic: 10         # nurged increment for initial thickness
   u_nurge_ic: 0         # nurged increment for initial velocity
-  nurged_entries: 60     # number of nurged entries
+  nurged_entries: 10     # number of nurged entries
 
   # enkf model parameters
   model_name: "icepack"               # name of the model

@@ -25,16 +25,14 @@ global vec_inputs
 vec_inputs = ['h','u','v','smb']
 
 # --- Forecast step ---
-def forecast_step_single(ens=None, ensemble=None, nd=None, **kwargs):
+def forecast_step_single(ensemble=None, **kwargs):
     """ensemble: packs the state variables:h,u,v of a single ensemble member
                  where h is thickness, u and v are the x and y components 
                  of the velocity field
     Returns: ensemble: updated ensemble member
     """
     #  call the run_model fun to push the state forward in time
-    # ensemble[:,ens] = run_model(ens, ensemble, nd, **kwargs)
-    return run_model(ens, ensemble, nd, **kwargs)
-    # return ensemble[:,ens]
+    return run_model(ensemble, **kwargs)
 
 # --- Background step ---
 def background_step(k=None, **kwargs):
@@ -105,7 +103,6 @@ def generate_true_state(**kwargs):
     statevec_true = kwargs["statevec_true"]
 
     params = kwargs["params"]
-    nt = params["nt"] - 1
     
     # --- define the state variables list ---
     global vec_inputs 
@@ -441,14 +438,31 @@ def initialize_ensemble_debug(color,**kwargs):
     # call the icesee_get_index function to get the indices of the state variables
     vecs, indx_map, dim_per_proc = icesee_get_index(statevec_ens, vec_inputs, **kwargs)
 
+    # --------------------*
+    statevec_nurged = generate_nurged_state(**kwargs)
+    h_perturbed = statevec_nurged[indx_map["h"],0]
+    hdim = vecs['h'].shape[0]
+    if 0.5*hdim > int(np.ceil(nurged_entries+1)):
+        h_indx = int(np.ceil(nurged_entries+1))
+    else:
+        h_indx = int(np.ceil(hdim*0.025))
+    h_bump = np.linspace(-h_nurge_ic,0,h_indx)
+    h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
+    h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
+    statevec_ens[:hdim,0] = h_perturbed
+
+    # ------------------------*
     # # ***create file with parallel acess
     # f = h5py.File(f"ensemble_data.h5", "w", driver='mpio', comm=comm)
     # color_group = f.create_group(f"color_{color}") #** create a group for each color
 
-    global_h0 = subcomm.gather(h0.dat.data_ro, root=0)
+    # global_h0 = subcomm.gather(h0.dat.data_ro, root=0)
+    global_h0 = subcomm.gather(h_perturbed, root=0) #**
     global_u = subcomm.gather(u0.dat.data_ro[:,0], root=0)
     global_v = subcomm.gather(u0.dat.data_ro[:,1], root=0)
-    global_smb = subcomm.gather(kwargs["a"].dat.data_ro, root=0)
+    if kwargs["joint_estimation"]:
+        # global_smb = subcomm.gather(kwargs["a"].dat.data_ro, root=0)
+        global_smb = subcomm.gather(statevec_nurged[indx_map["smb"],0] + np.random.normal(0, 0.01, hdim), root=0) 
 
     # *** create a dataset for each state variable
     # dset_h = color_group.create_dataset("h", shape=global_h0.shape, dtype='f8')
@@ -467,15 +481,20 @@ def initialize_ensemble_debug(color,**kwargs):
         global_h0 = np.hstack(global_h0) 
         global_u = np.hstack(global_u)
         global_v = np.hstack(global_v)
-        global_smb = np.hstack(global_smb)
+        if kwargs["joint_estimation"]:
+            global_smb = np.hstack(global_smb)
+        
 
         # add some kind of perturbations  with mean 0 and variance 1
-        noise = np.random.normal(0, 0.1, global_h0.shape)
-        global_h0 = global_h0 + noise
-        global_u = global_u + noise
-        global_v = global_v + noise
+        # noise = np.random.normal(0, 0.1, global_h0.shape)
+        # global_h0 = global_h0 + noise
+        # global_u = global_u + noise
+        # global_v = global_v + noise
         # stack all the state variables
-        stacked_state = np.hstack([global_h0,global_u,global_v,global_smb])
+        if kwargs["joint_estimation"]:
+            stacked_state = np.hstack([global_h0,global_u,global_v,global_smb])
+        else:
+            stacked_state = np.hstack([global_h0,global_u,global_v])
         shape_ = stacked_state.shape
     else:
         shape_ = np.empty(2,dtype=int)
@@ -494,14 +513,16 @@ def initialize_ensemble_debug(color,**kwargs):
         all_colors = [arr for arr in all_colors if arr is not None]
         statevec_ens = np.column_stack(all_colors)
         # print(f"[Debug]: all_colors shape: {all_colors.shape}")
-        # write to the file instead of bcasting
+        # add noise here to the ensemble members
+        noise = np.random.normal(0, 0.1, statevec_ens.shape)
+        statevec_ens = statevec_ens + noise
     else: 
         # None
         statevec_ens = np.empty((shape_[0], params['Nens']),dtype=float)
     # comm.Bcast(statevec_ens, root=0)
 
 
-    return statevec_ens
+    return statevec_ens,shape_
 
 def generate_random_field(kernel='gaussian',**kwargs):
     """

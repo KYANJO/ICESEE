@@ -180,10 +180,13 @@ def icesee_get_index(vec, vec_inputs, **kwargs):
         comm = kwargs.get("subcomm", None)
     else:
         comm = kwargs.get("comm_world", None)
+    
+    # get size of input vector based on user inputs
+    len_vec = params["total_state_param_vars"]
 
     # print(f"dim_list: {kwargs['dim_list']}")
-    dim_list_param = np.array(kwargs.get('dim_list', None)) // len(vec_inputs)  # Get the size of each variable slice
-    hdim = vec.shape[0] // len(vec_inputs)  # Compute the size of each variable in vec_inputs
+    dim_list_param = np.array(kwargs.get('dim_list', None)) // len_vec  # Get the size of each variable slice
+    hdim = vec.shape[0] // len_vec  # Compute the size of each variable in vec_inputs
 
     if comm is None:
         # Non-MPI case

@@ -159,6 +159,13 @@ if not flag_jupyter:
         else:
             params["default_run"] = True
 
+    #either way update the execution flag
+    if params["sequential_run"]:
+        params["execution_flag"] = 1
+    elif params["even_distribution"]:
+        params["execution_flag"] = 2
+    else:
+        params["execution_flag"] = 0
     
     # update for time t
     params["t"] = np.linspace(0, int(float(modeling_params["num_years"])), params["nt"] + 1)
@@ -172,11 +179,12 @@ if not flag_jupyter:
         "parameter_estimation": bool(enkf_params.get("parameter_estimation", False)),
         "state_estimation": bool(enkf_params.get("state_estimation", False)),
     }
-    # if kwargs["joint_estimation"]:
-    #     params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
-    # else:
-    #     params["total_state_param_vars"] = params["num_state_vars"]
-    params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
+
+    if kwargs["joint_estimation"]:
+        params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
+    else:
+        params["total_state_param_vars"] = params["num_state_vars"]
+    # params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
 
     # --- Observations Parameters ---
     obs_t, obs_idx, num_observations = UtilsFunctions(params).generate_observation_schedule(**kwargs)
