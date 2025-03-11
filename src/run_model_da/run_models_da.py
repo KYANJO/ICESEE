@@ -8,6 +8,7 @@
 # --- Imports ---
 from _utility_imports import *
 from tqdm import tqdm 
+import h5py
 from scipy.sparse import csr_matrix
 from scipy.sparse import block_diag
 from scipy.stats import multivariate_normal
@@ -70,7 +71,9 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
     if re.match(r"\AMPI_model\Z", parallel_flag, re.IGNORECASE):
         from mpi4py import MPI
         from parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
-        from mpi_analysis_functions import analysis_enkf_update, EnKF_X5, gather_and_broadcast_data_default_run
+        from mpi_analysis_functions import analysis_enkf_update, EnKF_X5, \
+                                            gather_and_broadcast_data_default_run, \
+                                            parallel_write_full_ensemble_from_root
 
         # start the timer
         start_time = MPI.Wtime()
@@ -81,6 +84,12 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
         # pack the global communicator and the subcommunicator
         model_kwargs.update({"comm_world": comm_world, "subcomm": subcomm})
+
+        # --- check if the modelrun dataset directory is present ---
+        _modelrun_datasets = f"_modelrun_datasets"
+        if rank_world == 0 and not os.path.exists(_modelrun_datasets):
+            # cretate the directory
+            os.makedirs(_modelrun_datasets, exist_ok=True)
 
         # --- initialize seed for reproducibility ---
         ParallelManager().initialize_seed(comm_world, base_seed=0)
@@ -120,14 +129,71 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 # gather all the vector dimensions from all processors
                 dim_list = subcomm.allgather(params["nd"])
                 global_shape = sum(dim_list)
-                # -- pack the global shape and the dimensions list to the model_kwargs
                 model_kwargs.update({"global_shape": global_shape, "dim_list": dim_list})
-                statevec_true = np.zeros([model_kwargs["global_shape"], params["nt"] + 1])
+                # statevec_true = np.zeros([model_kwargs['dim_list'][sub_rank], params["nt"] + 1])
+                statevec_true = np.zeros([global_shape, params["nt"] + 1])
                 model_kwargs.update({"statevec_true": statevec_true})
                 # generate the true state
-                ensemble_true_state = model_module.generate_true_state(**model_kwargs)
+                updated_true_state = model_module.generate_true_state(**model_kwargs)
+                # ensemble_true_state = gather_and_broadcast_data_default_run(updated_true_state, subcomm, sub_rank, comm_world, rank_world, params)
+                global_data = {key: subcomm.gather(data, root=0) for key, data in updated_true_state.items()}
+
+                if sub_rank == 0:
+                    for key in global_data:
+                        # print(f"Key: {key}, shape: {[arr.shape for arr in global_data[key]]}")
+                        global_data[key] = np.vstack(global_data[key])
+
+                    # stack all variables together into a single array
+                    stacked = np.vstack([global_data[key] for key in updated_true_state.keys()])
+                    shape_ = np.array(stacked.shape,dtype=np.int32)
+                    hdim = stacked.shape[0] // params["total_state_param_vars"]
+                    # print(f"Shape of the true state: {stacked.shape} min ensemble true: {np.min(stacked[hdim,:])}, max ensemble true: {np.max(stacked[hdim,:])}")
+                else:
+                    shape_ = np.empty(2,dtype=np.int32)
+
+                # broadcast the shape of the true state
+                shape_ = comm_world.bcast(shape_, root=0)
+
+                if sub_rank != 0:
+                    stacked = np.empty(shape_,dtype=np.float64)
+
+                # broadcast the true state
+                ensemble_true_state = comm_world.bcast(stacked, root=0)
+                hdim = ensemble_true_state.shape[0] // params["total_state_param_vars"]
+                # print(f"Shape of the true state: {ensemble_true_state.shape} min ensemble true: {np.min(ensemble_true_state[hdim,:])}, max ensemble true: {np.max(ensemble_true_state[hdim,:])}")
+                # all_true = comm_world.gather(stacked if sub_rank == 0 else None, root=0)
+
+                # if rank_world == 0:
+                #     all_true = [arr for arr in all_true if isinstance(arr, np.ndarray)]
+                #     ensemble_true_state = np.column_stack(all_true)
+                #     hdim = ensemble_true_state.shape[0] // params["total_state_param_vars"]
+                #     # print(f"Shape of the true state: {ensemble_true_state.shape} min ensemble true: {np.min(ensemble_true_state[hdim,:])}, max ensemble true: {np.max(ensemble_true_state[hdim,:])}")
+
+
+               
+
+                # exit()
+                # print(f"Rank: {rank_world}, min ensemble true: {np.min(ensemble_true_state)}, max ensemble true: {np.max(ensemble_true_state)}")
+                # exit()
 
                 # generate the nurged state
+                # statevec_nurged = np.zeros([model_kwargs['dim_list'][sub_rank], params["nt"] + 1])
+                # model_kwargs.update({"statevec_nurged": statevec_nurged})
+                # updated_nurged_state = model_module.generate_nurged_state(**model_kwargs)
+                # ensemble_nurged_state = gather_and_broadcast_data_default_run(updated_nurged_state, subcomm, sub_rank, comm_world, rank_world, params)
+
+                # # debug
+                # print(f"Rank: {rank_world}, min ensemble true: {np.min(ensemble_true_state)}, max ensemble true: {np.max(ensemble_true_state)}")
+                # print(f"Rank: {rank_world}, min ensemble nurged: {np.min(ensemble_nurged_state)}, max ensemble nurged: {np.max(ensemble_nurged_state)}")
+
+                # # -- pack the global shape and the dimensions list to the model_kwargs
+                # model_kwargs.update({"global_shape": global_shape, "dim_list": dim_list})
+                # statevec_true = np.zeros([model_kwargs["global_shape"], params["nt"] + 1])
+                # model_kwargs.update({"statevec_true": statevec_true})
+                # # generate the true state
+                # ensemble_true_state = model_module.generate_true_state(**model_kwargs)
+
+                # # generate the nurged state
                 statevec_nurged = np.zeros([model_kwargs["global_shape"], params["nt"] + 1])
                 model_kwargs.update({"statevec_nurged": statevec_nurged})
                 ensemble_nurged_state = model_module.generate_nurged_state(**model_kwargs)
@@ -261,7 +327,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
             comm_world.Bcast(ensemble_vec_full, root=0)
 
             hdim = params["nd"] // params["total_state_param_vars"]
-            print(f"Rank: {rank_world}, min ensemble: {np.min(ensemble_vec[hdim,:])}, max ensemble: {np.max(ensemble_vec[hdim,:])}")
+            # print(f"Rank: {rank_world}, min ensemble: {np.min(ensemble_vec[hdim,:])}, max ensemble: {np.max(ensemble_vec[hdim,:])}")
             # exit()
         else:
             if rank_world == 0:
@@ -318,6 +384,10 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
                 # _________________________________________
                 ensemble_vec  = model_module.initialize_ensemble_debug(color,**model_kwargs)
+                parallel_write_full_ensemble_from_root(0, params,ensemble_vec,comm_world)
+                # parallel_write_full_ensemble_from_root()
+                ensemble = comm_world.bcast(ensemble_vec, root=0)
+                # ensemble = ensemble_vec
                 # hdim = ensemble_vec.shape[0] // params["total_state_param_vars"]
                 # print(f"Rank: {rank_world}, min ensemble: {np.min(ensemble_vec[hdim,:])}, max ensemble: {np.max(ensemble_vec[hdim,:])}")
                 # print(f"ensemble_vec shape: {ensemble_vec.shape}")
@@ -325,8 +395,13 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 ensemble_vec_full = np.empty((model_kwargs["global_shape"],params["Nens"],params["nt"]+1),dtype=np.float64)
                 ensemble_vec_mean = np.empty((model_kwargs["global_shape"],params["nt"]+1),dtype=np.float64)
                 ensemble_bg = np.empty((model_kwargs["global_shape"],params["nt"]+1),dtype=np.float64)
-                ensemble_vec_mean[:,0] = np.mean(ensemble_vec, axis=1)
-                ensemble_vec_full[:,:,0] = ensemble_vec
+                # parallel_write_full_ensemble_from_root(ensemble_vec,ensemble_vec_full,comm_world,0)
+
+
+                
+                
+                ensemble_vec_mean[:,0] = np.mean(ensemble, axis=1)
+                ensemble_vec_full[:,:,0] = ensemble
                 ensemble_bg[:,0] = ensemble_vec_mean[:,0]
                 # exit()
                 # ______________________________
@@ -741,7 +816,15 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 elif Nens < size_world:
                     # Ensure all ranks in subcomm are in sync 
                     subcomm.Barrier()
+                    # ---- read from file ----
+                    input_file = f"_modelrun_datasets/ensemble_data.h5"
+                    with h5py.File(input_file, "r", driver="mpio", comm=subcomm) as f:
+                        ensemble_vec = f["ensemble"][:,color,k]
 
+                        # get column data for each color
+                        # ensemble_vec = ensemble[:,color]
+                        # ensemble_vec = ensemble[:,color:k]
+                    # print(f"Rank: {rank_world}, ensemble shape: {ensemble_vec.shape}")
                     # Call the forecast step fucntion- Each subcomm runs the function indepadently
                     ens = color # each subcomm has a unique color
                     updated_state = model_module.forecast_step_single(ens=ens, ensemble=ensemble_vec, nd=nd, **model_kwargs)
@@ -828,12 +911,11 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             X5 = EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d)
                             y_i = np.sum(X5, axis=1)
                             ensemble_vec_mean[:,k+1] = (1/Nens)*(ensemble_vec @ y_i.reshape(-1,1)).ravel()
-                            
                     else:
                         X5 = np.empty((Nens, Nens))
 
                     # call the analysis update function
-                    ensemble_vec = analysis_enkf_update(ensemble_vec, shape_ens, X5, comm_world)
+                    ensemble_vec = analysis_enkf_update(k,params,ensemble_vec, shape_ens, X5, comm_world)
                 
                     # update the observation index
                     km += 1
@@ -841,17 +923,19 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                     # inflate the ensemble
                     ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
 
-                    ensemble_vec = copy.deepcopy(ensemble_vec[:,:])
+                    # ensemble_vec = copy.deepcopy(ensemble_vec[:,:])
                 else: 
                     if Nens < size_world:
-                        ensemble_vec = BM.bcast(ensemble_vec, comm_world)
+                        # ensemble_vec = BM.bcast(ensemble_vec, comm_world)
+                        parallel_write_full_ensemble_from_root(k+1,params,ensemble_vec,comm_world)
+                        # parallel_write_full_ensemble_from_root(ensemble_vec,ensemble_vec_full,comm_world,k)
 
                 # save the ensemble    
                 if rank_world == 0:
-                    ensemble_vec_full[:,:,k+1] = ensemble_vec[:,:]     
+                    # ensemble_vec_full[:,:,k+1] = ensemble_vec[:,:]     
                     ensemble_vec_mean[:,k+1]   = ens_mean      
                 else:
-                    ensemble_vec_full = np.empty((shape_ens[0],Nens,params["nt"]+1), dtype=np.float64)
+                    # ensemble_vec_full = np.empty((shape_ens[0],Nens,params["nt"]+1), dtype=np.float64)
                     ensemble_vec_mean = np.empty((shape_ens[0],params["nt"]+1), dtype=np.float64)
 
                 # free up memory

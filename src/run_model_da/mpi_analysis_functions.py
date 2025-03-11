@@ -7,7 +7,9 @@
 # =============================================================================
 
 import gc
+import os
 import copy
+import h5py
 import numpy as np
 import bigmpi4py as BM
 from scipy.stats import multivariate_normal
@@ -15,6 +17,163 @@ from scipy.stats import multivariate_normal
 # seed the random number generator
 np.random.seed(0)
 
+def parallel_write_ensemble_scattered(timestep, params, ensemble_chunk, comm, output_file="ensemble_data.h5"):
+    """
+    Write ensemble data in parallel using h5py and MPI
+    ensemble_chunk: local data on each rank with shape (local_nd, Nens)
+    """
+    # MPI setup
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Get local chunk dimensions
+    local_nd = ensemble_chunk.shape[0]  # rows per rank
+    Nens = ensemble_chunk.shape[1]      # ensemble members (same for all ranks)
+
+    # Gather the number of rows from each rank
+    local_nd_array = comm.gather(local_nd, root=0)
+    # local_nd_array = BM.gather(local_nd, comm)
+    
+    if rank == 0:
+        nd_total = sum(local_nd_array)
+    else:
+        nd_total = None
+    nd_total = BM.bcast(nd_total, comm)
+
+    # Calculate offsets for each rank
+    offset = comm.scan(local_nd) - local_nd  # Exclusive scan gives starting position
+
+    # check if _modelrun_datasets exists
+    # _modelrun_datasets = f"_modelrun_datasets"
+    # if rank == 0 and not os.path.exists(_modelrun_datasets):
+    #     # cretate the directory
+    #     os.makedirs(_modelrun_datasets, exist_ok=True)
+    
+    # comm.barrier() # wait for all processes to reach this point
+    output_file = os.path.join("_modelrun_datasets", output_file)
+
+    # Open file in parallel mode
+    if timestep == 0:
+        with h5py.File(output_file, 'w', driver='mpio', comm=comm) as f:
+            # Create dataset with total dimensions
+            dset = f.create_dataset('ensemble', (nd_total, Nens, params['nt']+1), dtype=ensemble_chunk.dtype)
+            
+            # Each rank writes its chunk
+            dset[offset:offset + local_nd, :,0] = ensemble_chunk
+    else:
+        with h5py.File(output_file, 'a', driver='mpio', comm=comm) as f:
+            dset = f['ensemble']
+            dset[offset:offset + local_nd, :,timestep] = ensemble_chunk
+    comm.Barrier()
+
+def parallel_write_full_ensemble_from_root__(full_ensemble=None, comm=None, output_file="ensemble_data.h5"):
+    """
+    Write ensemble data in parallel where full matrix exists on rank 0
+    full_ensemble: complete matrix on rank 0 with shape (nd, Nens)
+    """
+    # MPI setup
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Get dimensions on root and broadcast
+    if rank == 0:
+        nd = full_ensemble.shape[0]
+        Nens = full_ensemble.shape[1]
+        dtype = full_ensemble.dtype
+    else:
+        nd = None
+        Nens = None
+        dtype = None
+    
+    nd = comm.bcast(nd, root=0)
+    Nens = comm.bcast(Nens, root=0)
+    dtype = comm.bcast(dtype, root=0)
+
+    # Calculate local chunk sizes
+    local_nd = nd // size  # Base size per rank
+    remainder = nd % size  # Extra rows to distribute
+    
+    # Determine local size and offset for each rank
+    if rank < remainder:
+        local_nd += 1  # Distribute remainder to first few ranks
+    offset = rank * (nd // size) + min(rank, remainder)
+
+    # Scatter the data (only if rank 0 has it)
+    if rank == 0:
+        chunks = np.array_split(full_ensemble, size, axis=0)
+    else:
+        chunks = None
+    
+    local_chunk = BM.scatter(chunks, comm)
+    
+    # comm.barrier() # wait for all processes to reach this point
+    output_file = os.path.join("_modelrun_datasets", output_file)
+
+    # Open file in parallel mode
+    with h5py.File(output_file, 'w', driver='mpio', comm=comm) as f:
+        # Create dataset with total dimensions
+        dset = f.create_dataset('ensemble', (nd, Nens), dtype=dtype)
+        
+        # Each rank writes its chunk
+        dset[offset:offset + local_nd, :] = local_chunk
+
+    
+def parallel_write_full_ensemble_from_root(timestep, params,full_ensemble=None, comm=None, output_file="ensemble_data.h5"):
+    """
+    Append ensemble data in parallel where the full matrix exists on rank 0.
+    Each call appends a new time step, resulting in a dataset of shape (nd, Nens, nt).
+
+    full_ensemble: complete matrix on rank 0 with shape (nd, Nens)
+    comm: MPI communicator
+    output_file: Name of the output HDF5 file
+    """
+    # MPI setup
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Get dimensions on root and broadcast
+    if rank == 0:
+        nd, Nens = full_ensemble.shape
+        dtype = full_ensemble.dtype
+    else:
+        nd, Nens, dtype = None, None, None
+    
+    nd = comm.bcast(nd, root=0)
+    Nens = comm.bcast(Nens, root=0)
+    dtype = comm.bcast(dtype, root=0)
+
+    # Calculate local chunk sizes
+    local_nd = nd // size
+    remainder = nd % size
+
+    if rank < remainder:
+        local_nd += 1
+    offset = rank * (nd // size) + min(rank, remainder)
+
+    # Scatter the data from rank 0
+    if rank == 0:
+        chunks = np.array_split(full_ensemble, size, axis=0)
+    else:
+        chunks = None
+    
+    local_chunk = BM.scatter(chunks, comm)
+
+    # Define output file path
+    output_file = os.path.join("_modelrun_datasets", output_file)
+
+    # Open file in parallel mode
+    if timestep == 0:
+        with h5py.File(output_file, 'w', driver='mpio', comm=comm) as f:
+            # Create dataset with total dimensions
+            dset = f.create_dataset('ensemble', (nd, Nens, params['nt']+1), dtype=dtype)
+            
+            # Each rank writes its chunk
+            dset[offset:offset + local_nd, :,0] = local_chunk
+    else:
+        with h5py.File(output_file, 'a', driver='mpio', comm=comm) as f:
+            dset = f['ensemble']
+            dset[offset:offset + local_nd, :,timestep] = local_chunk
+    comm.Barrier()
 # ============================ EnKF functions ============================  
 def EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d):
     """
@@ -99,7 +258,7 @@ def EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d):
 
     return X5
 
-def analysis_enkf_update(ensemble_vec, shape_ens, X5, comm_world):
+def analysis_enkf_update(k,params,ensemble_vec, shape_ens, X5, comm_world):
     """
     Function to perform the analysis update using the EnKF
         - broadcast X5 to all processors
@@ -124,7 +283,8 @@ def analysis_enkf_update(ensemble_vec, shape_ens, X5, comm_world):
     analysis_vec = np.dot(scatter_ensemble, X5)
 
     # gather from all processors
-    ensemble_vec = BM.allgather(analysis_vec, comm_world)
+    # ensemble_vec = BM.allgather(analysis_vec, comm_world)
+    parallel_write_ensemble_scattered(k+1,params,analysis_vec, comm_world)
 
     # clean the memory
     del scatter_ensemble, analysis_vec; gc.collect()
@@ -196,3 +356,4 @@ def gather_and_broadcast_data_default_run(updated_state, subcomm, sub_rank, comm
     ensemble_vec = BM.bcast(ensemble_vec, comm_world)
 
     return ensemble_vec
+

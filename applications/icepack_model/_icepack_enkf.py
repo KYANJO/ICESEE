@@ -9,6 +9,7 @@ import sys
 import os
 import numpy as np
 import re
+import h5py
 from scipy.stats import multivariate_normal,norm
 
 # --- import run_simulation function from the available examples ---
@@ -123,7 +124,7 @@ def generate_true_state(**kwargs):
 
     h = h0.copy(deepcopy=True)
     u = u0.copy(deepcopy=True)
-    for k in range(nt):
+    for k in range(params['nt']):
         # call the ice stream model to update the state variables
         h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
 
@@ -135,7 +136,13 @@ def generate_true_state(**kwargs):
         if kwargs["joint_estimation"]:
             statevec_true[indx_map["smb"],k+1] = a.dat.data_ro
 
-    return statevec_true
+    update_state = {'h': statevec_true[indx_map["h"],:], 
+                    'u': statevec_true[indx_map["u"],:], 
+                    'v': statevec_true[indx_map["v"],:]}
+    # -- for joint estimation --
+    if kwargs["joint_estimation"]:
+        update_state['smb'] = statevec_true[indx_map["smb"],:]
+    return update_state
 
 def generate_nurged_state(**kwargs):
     """generate the nurged state of the model"""
@@ -237,7 +244,7 @@ def generate_nurged_state(**kwargs):
         a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
         statevec_nurged[indx_map["smb"],0] = a.dat.data_ro
 
-    for k in range(nt):
+    for k in range(params['nt']):
         # aa   = a_in_p*(np.sin(tnur[k]) + 1)
         # daa  = da_p*(np.sin(tnur[k]) + 1)
         aa = a_in_p
@@ -434,12 +441,29 @@ def initialize_ensemble_debug(color,**kwargs):
     # call the icesee_get_index function to get the indices of the state variables
     vecs, indx_map, dim_per_proc = icesee_get_index(statevec_ens, vec_inputs, **kwargs)
 
+    # # ***create file with parallel acess
+    # f = h5py.File(f"ensemble_data.h5", "w", driver='mpio', comm=comm)
+    # color_group = f.create_group(f"color_{color}") #** create a group for each color
+
     global_h0 = subcomm.gather(h0.dat.data_ro, root=0)
     global_u = subcomm.gather(u0.dat.data_ro[:,0], root=0)
     global_v = subcomm.gather(u0.dat.data_ro[:,1], root=0)
     global_smb = subcomm.gather(kwargs["a"].dat.data_ro, root=0)
+
+    # *** create a dataset for each state variable
+    # dset_h = color_group.create_dataset("h", shape=global_h0.shape, dtype='f8')
+    # dset_u = color_group.create_dataset("u", shape=global_u.shape, dtype='f8')
+    # dset_v = color_group.create_dataset("v", shape=global_v.shape, dtype='f8')
+    # dset_smb = color_group.create_dataset("smb", shape=global_smb.shape, dtype='f8')
+
     #stacked_state = np.hstack([global_h0,global_u,global_v])
     if subrank == 0:
+        # dset_h[:] = global_h0
+        # dset_u[:] = global_u
+        # dset_v[:] = global_v
+        # dset_smb[:] = global_smb
+
+        # ------------------------
         global_h0 = np.hstack(global_h0) 
         global_u = np.hstack(global_u)
         global_v = np.hstack(global_v)
@@ -457,6 +481,10 @@ def initialize_ensemble_debug(color,**kwargs):
         shape_ = np.empty(2,dtype=int)
 
     shape_ = comm.bcast(shape_, root=0)
+
+    # store subrank as attribute
+    # color_group.attrs["subrank"] = subrank
+    # f.close()
     
     if subrank != 0:
         stacked_state = np.empty(shape_,dtype=float)
@@ -466,9 +494,13 @@ def initialize_ensemble_debug(color,**kwargs):
         all_colors = [arr for arr in all_colors if arr is not None]
         statevec_ens = np.column_stack(all_colors)
         # print(f"[Debug]: all_colors shape: {all_colors.shape}")
+        # write to the file instead of bcasting
     else: 
+        # None
         statevec_ens = np.empty((shape_[0], params['Nens']),dtype=float)
-    comm.Bcast(statevec_ens, root=0)
+    # comm.Bcast(statevec_ens, root=0)
+
+
     return statevec_ens
 
 def generate_random_field(kernel='gaussian',**kwargs):

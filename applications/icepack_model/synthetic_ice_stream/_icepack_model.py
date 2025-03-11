@@ -204,7 +204,8 @@ def run_model(ens, ensemble, nd, **kwargs):
         # Use analysis step to update the accumulation rate
         # - pack accumulation rate with the state variables to
         #   get ensemble = [h,u,v,a]
-        a_vec = ensemble[indx_map["smb"],ens]
+        # a_vec = ensemble[indx_map["smb"],ens]
+        a_vec = ensemble[indx_map["smb"]]
 
         a = Function(Q)
         # print(f"a size: {a.dat.data.size} avec {a_vec.shape} ensemble shape: {ensemble.shape}")
@@ -215,11 +216,14 @@ def run_model(ens, ensemble, nd, **kwargs):
 
     # create firedrake functions from the ensemble members
     h = Function(Q)
-    h.dat.data[:] = ensemble[indx_map["h"],ens]
+    # h.dat.data[:] = ensemble[indx_map["h"],ens]
+    h.dat.data[:] = ensemble[indx_map["h"]]
 
     u = Function(V)
-    u.dat.data[:,0] = ensemble[indx_map["u"],ens]
-    u.dat.data[:,1] = ensemble[indx_map["v"],ens]
+    # u.dat.data[:,0] = ensemble[indx_map["u"],ens]
+    # u.dat.data[:,1] = ensemble[indx_map["v"],ens]
+    u.dat.data[:,0] = ensemble[indx_map["u"]]
+    u.dat.data[:,1] = ensemble[indx_map["v"]]
 
     # call the ice stream model to update the state variables
     h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
