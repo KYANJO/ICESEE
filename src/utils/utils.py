@@ -115,8 +115,9 @@ class UtilsFunctions:
         return obs_t, obs_idx, num_observations
     
     # --- Create synthetic observations ---
-    def _create_synthetic_observations(self,statevec_true,**kwargs):
+    def _create_synthetic_observations(self,**kwargs):
         """create synthetic observations"""
+        statevec_true = kwargs.get('statevec_true', None)
         nd, nt = statevec_true.shape
 
         obs_t, ind_m, m_obs = self.generate_observation_schedule(**kwargs)

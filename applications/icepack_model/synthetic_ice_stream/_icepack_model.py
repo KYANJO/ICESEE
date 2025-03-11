@@ -29,9 +29,17 @@ from icepack.constants import (
     weertman_sliding_law as m
 )
 
+# --- Utility imports ---
+sys.path.insert(0, '../../../config')
+from _utility_imports import icesee_get_index
+
+# --- globally define the state variables ---
+global vec_inputs 
+vec_inputs = ['h','u','v','smb']
+
 # --- model initialization ---
 def initialize_model(physical_params, modeling_params, comm):
-
+    """des: initialize the icepack model"""
     # get size and rank of the communicator
     size = comm.Get_size()
     rank = comm.Get_rank()
@@ -166,7 +174,7 @@ def Icepack(solver, h, u, a, b, dt, h0, **kwargs):
     return h, u
 
 # --- Run model for the icepack model ---
-def run_model(ens, ensemble, nd, params, **kwargs):
+def run_model(ensemble, **kwargs):
     """des: icepack model function
         inputs: ensemble - current state of the model
                 **kwargs - additional arguments for the model
@@ -182,23 +190,25 @@ def run_model(ens, ensemble, nd, params, **kwargs):
     C  = kwargs.get('C', None)
     Q  = kwargs.get('Q', None)
     V  = kwargs.get('V', None)
+    params = kwargs.get('params', None)
     solver = kwargs.get('solver', None)
-   
-    ndim = nd // (params["num_state_vars"] + params["num_param_vars"])
-    state_block_size = ndim*params["num_state_vars"]
-    
-    # unpack h,u,v from the ensemble member
-    h_vec = ensemble[:ndim,ens]
-    u_vec = ensemble[ndim:2*ndim,ens]
-    v_vec = ensemble[2*ndim:3*ndim,ens]
+
+    # --- define the state variables list ---
+    global vec_inputs 
+
+    # call the icesee_get_index function to get the indices of the state variables
+    vecs, indx_map, dim_per_proc = icesee_get_index(ensemble, vec_inputs, **kwargs)
 
     # joint estimation
     if kwargs["joint_estimation"]:
         # Use analysis step to update the accumulation rate
         # - pack accumulation rate with the state variables to
         #   get ensemble = [h,u,v,a]
-        a_vec = ensemble[3*ndim:,ens]
+        # a_vec = ensemble[indx_map["smb"],ens]
+        a_vec = ensemble[indx_map["smb"]]
+
         a = Function(Q)
+        # print(f"a size: {a.dat.data.size} avec {a_vec.shape} ensemble shape: {ensemble.shape}")
         a.dat.data[:] = a_vec.copy()
     else:
         # don't update the accumulation rate (updates smb)
@@ -206,21 +216,29 @@ def run_model(ens, ensemble, nd, params, **kwargs):
 
     # create firedrake functions from the ensemble members
     h = Function(Q)
-    h.dat.data[:] = h_vec.copy()
+    # h.dat.data[:] = ensemble[indx_map["h"],ens]
+    h.dat.data[:] = ensemble[indx_map["h"]]
 
     u = Function(V)
-    u.dat.data[:,0] = u_vec.copy()
-    u.dat.data[:,1] = v_vec.copy()
+    # u.dat.data[:,0] = ensemble[indx_map["u"],ens]
+    # u.dat.data[:,1] = ensemble[indx_map["v"],ens]
+    u.dat.data[:,0] = ensemble[indx_map["u"]]
+    u.dat.data[:,1] = ensemble[indx_map["v"]]
 
     # call the ice stream model to update the state variables
     h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
 
-    # update the ensemble members with the new state variables and noise 
-    ensemble[:ndim,ens]              = h.dat.data_ro       
-    ensemble[ndim:2*ndim,ens]        = u.dat.data_ro[:,0]  
-    ensemble[2*ndim:3*ndim,ens]      = u.dat.data_ro[:,1] 
+    # return a list of the updated state variables
+    updated_state = {'h': h.dat.data_ro,
+                     'u': u.dat.data_ro[:,0],
+                     'v': u.dat.data_ro[:,1]}
+    
+    if kwargs["joint_estimation"]:
+        updated_state['smb'] = a_vec
+    # else:
+    #     updated_state['smb'] = a.dat.data_ro
 
-    return ensemble[:,ens]
+    return updated_state
 
 
 

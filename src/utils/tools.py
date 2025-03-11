@@ -10,6 +10,7 @@ import re
 import subprocess
 import h5py
 import numpy as np
+from mpi4py import MPI
 
 # Function to safely change directory
 def safe_chdir(main_directory,target_directory):
@@ -157,6 +158,67 @@ def save_all_data(enkf_params=None, nofilter=None, **kwargs):
             **kwargs
         )
 
-# --- using checkpointing to save icepack output ---
-# def save_icepack_output(h_save, u_save, smb, params,kwargs):
+# ---- function to get the index of the variables in the vector dynamically
+def icesee_get_index(vec, vec_inputs, **kwargs):
+    """
+    Get the index of the variables in the vector dynamically.
+
+    Parameters:
+        - vec: The vector to be distributed
+        - vec_inputs: List of input variable names, e.g., ['h', 'u', 'v', 'smb']
+        - hdim: Size of each variable in vec_inputs
+        - dim_list: List of sizes of each rank; ordered through the ranks using MPI_gather on root and broadcast
+        - comm: MPI communicator containing the rank and size of the processors
+
+    Returns:
+        - var_indices: Dictionary where keys are variable names and values are their respective slices from `vec`
+        - index_map: Dictionary where keys are variable names and values are the indices corresponding to their slices
+    """
+    # -- get parameters
+    params = kwargs.get("params", None)
+    if params["default_run"]:
+        comm = kwargs.get("subcomm", None)
+    else:
+        comm = kwargs.get("comm_world", None)
+    
+    # get size of input vector based on user inputs
+    len_vec = params["total_state_param_vars"]
+
+    # print(f"dim_list: {kwargs['dim_list']}")
+    dim_list_param = np.array(kwargs.get('dim_list', None)) // len_vec  # Get the size of each variable slice
+    hdim = vec.shape[0] // len_vec  # Compute the size of each variable in vec_inputs
+
+    if comm is None:
+        # Non-MPI case
+        rank = 0
+        dim = dim_list_param[rank]
+        offsets = [0]  # No offsets needed
+    else:
+        # MPI case
+        size_world = kwargs.get("comm_world").Get_size()  # Get the total number of processors
+        if params["even_distribution"] or (params["default_run"] and size_world <= params["Nens"]):
+            rank = 0 # Set rank to 0 for even distribution
+            dim = dim_list_param[rank]
+            offsets = [0]
+        else:
+            rank = comm.Get_rank()  # Get the rank of the current processor
+            dim = dim_list_param[rank]
+            offsets = np.cumsum(np.insert(dim_list_param, 0, 0))  # Compute offsets per processor
+
+    start_idx = offsets[rank]  # Get the start index of the current processor
+   
+    # Dynamically determine start indices for each variable
+    var_indices = {}
+    index_map = {}
+    var_start = 0  # Initial start index
+
+    for var in vec_inputs:
+        start = var_start + start_idx
+        end = start + dim
+        var_indices[var] = vec[start:end]
+        index_map[var] = np.arange(start, end)  # Store index range for easy fetching
+        var_start += hdim  # Move to the next variable slice
+
+    local_size_per_rank = kwargs.get('dim_list', None)
+    return var_indices, index_map, local_size_per_rank[rank]
             

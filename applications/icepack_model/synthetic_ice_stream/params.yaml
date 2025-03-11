@@ -1,9 +1,9 @@
 physical-parameters:
   # Domain parameters
-  Lx: 50e3        # (m)
-  Ly: 12e3        # (m)
-  nx: 24         # number of elements in the x-direction
-  ny: 16        # number of elements in the y-direction
+  Lx: 50e2        # (m)
+  Ly: 12e2        # (m)
+  nx: 12         # number of elements in the x-direction
+  ny: 8        # number of elements in the y-direction
   degree: 2       # degree of the polynomial basis functions
 
   # Bedrock slopes 
@@ -23,9 +23,9 @@ modeling-parameters:
   T: 255.0                # (K) temperature
   a_in: 1.7               # accumulation rate at the inflow
   da:   -2.7              # change of accumulation rate
-  a_in_p: 1.9            # nurged accumulation rate at the inflow
-  da_p: -2.9            # nurged change of accumulation rate
-  num_years: 250          # number of years to run the model
+  a_in_p: 1.87            # nurged accumulation rate at the inflow
+  da_p: -2.835            # nurged change of accumulation rate
+  num_years: 50          # number of years to run the model
   timesteps_per_year: 2   # number of timesteps per year
 
 enkf-parameters:
@@ -41,16 +41,15 @@ enkf-parameters:
   # Statistical parameters
   sig_model: 0.1          # model error standard deviation
   sig_obs: 0.1           # observation error standard deviation
-  sig_Q: 0.1             # process noise standard deviation
+  sig_Q: 0.01             # process noise standard deviation
 
   seed: 1                 # seed for random number generator
-  inflation_factor: 1.02          # inflation factor
+  inflation_factor: 1.0          # inflation factor
   localization_flag: False      # localization flag: True, False
 
   # estimation flags
   joint_estimation: True # joint estimation flag: True, False
-  state_estimation: False  # state estimation flag: True, False
-  parameter_estimation: False # parameter estimation flag: True, False
+  parameter_estimation: True # parameter estimation flag: True, False
 
   # nurged parameters
   h_nurge_ic: 150         # nurged increment for initial thickness

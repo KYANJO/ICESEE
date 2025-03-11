@@ -49,6 +49,7 @@ sys.path.insert(0, parallelization_dir)
 
 # import the necessary modules
 from tools import save_arrays_to_h5, extract_datasets_from_h5, save_all_data
+from tools import icesee_get_index
 from utils import UtilsFunctions
 from config_loader import load_yaml_to_dict, get_section
 
@@ -72,7 +73,7 @@ if not flag_jupyter:
 
     # CL args.
     parser = ArgumentParser(description='ICESEE: Ice Sheet Parameter and State Estimation model')
-    parser.add_argument('--Nens', type=int, required=False, default=2, help='ensemble members')
+    parser.add_argument('--Nens', type=int, required=False, default=1, help='ensemble members')
     parser.add_argument('--verbose', action='store_true', help='verbose output')
     parser.add_argument('--default_run', action='store_true', help='default run')
     parser.add_argument('--sequential_run', action='store_true', help='sequential run')
@@ -82,7 +83,9 @@ if not flag_jupyter:
     args = parser.parse_args()
 
     # check if default run arugment is provided
-    run_flag = not (args.default_run or args.sequential_run or args.even_distribution)
+    run_flag = False
+    if (args.default_run or args.sequential_run or args.even_distribution):
+        run_flag = True
 
     # Determine execution mode
     selected_mode = "default_run"  # Default mode
@@ -143,8 +146,8 @@ if not flag_jupyter:
     })
 
     # --- incase CL args not provided ---
-    if Nens == 2:
-        params["Nens"] = int(float(enkf_params.get("Nens", 2)))
+    if Nens == 1:
+        params["Nens"] = int(float(enkf_params.get("Nens", 1)))
     
     if run_flag:
         execution_flag = params.get("execution_flag")
@@ -156,10 +159,16 @@ if not flag_jupyter:
         else:
             params["default_run"] = True
 
+    #either way update the execution flag
+    if params["sequential_run"]:
+        params["execution_flag"] = 1
+    elif params["even_distribution"]:
+        params["execution_flag"] = 2
+    else:
+        params["execution_flag"] = 0
     
     # update for time t
     params["t"] = np.linspace(0, int(float(modeling_params["num_years"])), params["nt"] + 1)
-    params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
 
     # model kwargs
     kwargs = {
@@ -171,8 +180,16 @@ if not flag_jupyter:
         "state_estimation": bool(enkf_params.get("state_estimation", False)),
     }
 
+    if kwargs["joint_estimation"]:
+        params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
+    else:
+        params["total_state_param_vars"] = params["num_state_vars"]
+    # params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
+
     # --- Observations Parameters ---
     obs_t, obs_idx, num_observations = UtilsFunctions(params).generate_observation_schedule(**kwargs)
     # print(obs_t)
     kwargs["obs_index"] = obs_idx
     params["number_obs_instants"] = num_observations
+    kwargs["parallel_flag"]       = enkf_params.get("parallel_flag", "serial")
+    kwargs["commandlinerun"]      = enkf_params.get("commandlinerun", False)
