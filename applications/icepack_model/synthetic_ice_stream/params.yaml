@@ -54,7 +54,7 @@ enkf-parameters:
   # nurged parameters
   h_nurge_ic: 100         # nurged increment for initial thickness
   u_nurge_ic: 0         # nurged increment for initial velocity
-  nurged_entries_percentage: 0.15 #%     # percentage of nurged entries in the state vector
+  nurged_entries_percentage: 0.10 #%     # percentage of nurged entries in the state vector
 
   # enkf model parameters
   model_name: "icepack"               # name of the model

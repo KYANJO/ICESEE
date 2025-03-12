@@ -360,89 +360,61 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 # debug
                 sub_shape = model_kwargs['dim_list'][sub_rank]
                 model_kwargs.update({"statevec_ens":np.zeros((sub_shape, params["Nens"]))})
-                ensemble_vec, shape_ens  = model_module.initialize_ensemble_debug(color,**model_kwargs)
-                # add noise to the mean of the ensemble
-                ens_mean = ParallelManager().compute_mean_matrix_from_root(ensemble_vec, shape_ens[0], params['Nens'], comm_world, root=0)
-                parallel_write_full_ensemble_from_root(0, ens_mean, params,ensemble_vec,comm_world)
+                # ensemble_vec, shape_ens  = model_module.initialize_ensemble_debug(color,**model_kwargs)
+                # ens_mean = ParallelManager().compute_mean_matrix_from_root(ensemble_vec, shape_ens[0], params['Nens'], comm_world, root=0)
+                # parallel_write_full_ensemble_from_root(0, ens_mean, params,ensemble_vec,comm_world)
                 # -----------------------------------------------------
 
                 ens = color
                 # model_kwargs.update({"statevec_ens":np.zeros((model_kwargs['global_shape'], params["Nens"]))})
-                # initialilaized_state = model_module.initialize_ensemble(ens,**model_kwargs)
+                initialilaized_state = model_module.initialize_ensemble(ens,**model_kwargs)
                 # ensemble_vec, shape_ens = gather_and_broadcast_data_default_run(initialilaized_state, subcomm, sub_rank, comm_world, rank_world, params)
                 # ens_mean = ParallelManager().compute_mean_matrix_from_root(ensemble_vec, shape_ens[0], params['Nens'], comm_world, root=0)
                 # parallel_write_full_ensemble_from_root(0, ens_mean, params,ensemble_vec,comm_world)
                 # ensemble_vec = BM.bcast(ensemble_vec, comm_world)
                 
-                # initial_data = {key: subcomm.gather(value, root=0) for key, value in initialilaized_state.items()}
-
-                # if sub_rank == 0:
-                #     for key in initial_data:
-                #         initial_data[key] = np.hstack(initial_data[key])
+                initial_data = {key: subcomm.gather(value, root=0) for key, value in initialilaized_state.items()}
+                key_list = list(initial_data.keys())
+                state_keys = key_list[:params["num_state_vars"]]
+                if sub_rank == 0:
+                    # for key in initial_data:
+                    for key in key_list:
+                        initial_data[key] = np.hstack(initial_data[key])
+                        if model_kwargs["joint_estimation"] or params["localization_flag"]:
+                            hdim = initial_data[key].shape[0] // params["total_state_param_vars"]
+                        else:
+                            hdim = initial_data[key].shape[0] // params["num_state_vars"]
+                        state_block_size = hdim // params["num_state_vars"]
+                        if key in state_keys:
+                            # noise = np.random.normal(0, 0.1, state_block_size)
+                            # Q_err = np.eye(state_block_size) * params["sig_Q"] ** 2
+                            Q_err = np.eye(state_block_size) * 0.01 ** 2
+                            noise = multivariate_normal.rvs(mean=np.zeros(state_block_size), cov=Q_err)
+                            initial_data[key][:state_block_size] += noise[:state_block_size]
                         
-                #     # stack all variables together into a single array
-                #     stacked = np.hstack([initial_data[key] for key in initialilaized_state.keys()])
-                #     shape_ens = np.array(stacked.shape,dtype=np.int32)
-                # else:
-                #     shape_ens = np.empty(2,dtype=np.int32)
+                    # stack all variables together into a single array
+                    stacked = np.hstack([initial_data[key] for key in initialilaized_state.keys()])
+                    shape_ens = np.array(stacked.shape,dtype=np.int32)
+                else:
+                    shape_ens = np.empty(2,dtype=np.int32)
 
-                # # broadcast the shape of the initialized ensemble
-                # shape_ens = comm_world.bcast(shape_ens, root=0)
+                # broadcast the shape of the initialized ensemble
+                shape_ens = comm_world.bcast(shape_ens, root=0)
 
-                # if sub_rank != 0:
-                #     stacked = np.empty(shape_ens,dtype=np.float64)
+                if sub_rank != 0:
+                    stacked = np.empty(shape_ens,dtype=np.float64)
 
-                # all_init = comm_world.gather(stacked if sub_rank == 0 else None, root=0)
+                all_init = comm_world.gather(stacked if sub_rank == 0 else None, root=0)
 
-                # if rank_world == 0:
-                #     all_init = [arr for arr in all_init if isinstance(arr, np.ndarray)]
-                #     ensemble_vec = np.column_stack(all_init)
-                #     print(f"Shape of the ensemble: {ensemble_vec.shape}")
+                if rank_world == 0:
+                    all_init = [arr for arr in all_init if isinstance(arr, np.ndarray)]
+                    ensemble_vec = np.column_stack(all_init)
+                    # print(f"Shape of the ensemble: {ensemble_vec.shape}")
+                else:
+                    ensemble_vec = np.empty((model_kwargs["global_shape"],params["Nens"]),dtype=np.float64)
                 
-                # exit()
-
-                    
-                # if sub_rank == 0:
-                #     for key in initial_data:
-                #         initial_data[key] = np.hstack(initial_data[key])
-
-                #     # stack all variables together into a single array
-                #     stacked_init = np.column_stack([initial_data[key] for key in initialilaized_state.keys()])
-                #     shape_init = np.array(stacked_init.shape,dtype=np.int32)
-                # else:
-                #     shape_init = np.empty(2,dtype=np.int32)
-
-                # # broadcast the shape of the initialized ensemble
-                # shape_init = comm_world.bcast(shape_init, root=0)
-
-                # if sub_rank != 0:
-                #     stacked_init = np.empty(shape_init,dtype=np.float64)
-
-                # # gather all the stacked arrays from all subranks
-                # all_init = comm_world.gather(stacked_init if sub_rank == 0 else None, root=0)
-
-                # if rank_world == 0:
-                #     all_init = [arr for arr in all_init if isinstance(arr, np.ndarray)]
-                #     ensemble_vec = np.column_stack(all_init)
-                # else:
-                #     ensemble_vec = np.empty((model_kwargs["global_shape"],params["Nens"]),dtype=np.float64)
-
-                # # broadcast the ensemble
-                # # comm_world.Bcast(ensemble_vec, root=0)
-                # ensemble_vec = comm_world.bcast(ensemble_vec, root=0)
-                # hdim = ensemble_vec.shape[0] // params["total_state_param_vars"]
-                # print(f"Rank: {rank_world},shape ensemble{ensemble_vec.shape} min ensemble: {np.min(ensemble_vec[hdim,:])}, max ensemble: {np.max(ensemble_vec[hdim,:])}")
-
-                # ensemble_vec_full = np.empty((model_kwargs["global_shape"],params["Nens"],params["nt"]+1),dtype=np.float64)
-                # ensemble_vec_mean = np.empty((model_kwargs["global_shape"],params["nt"]+1),dtype=np.float64)
-                # ensemble_bg = np.empty((model_kwargs["global_shape"],params["nt"]+1),dtype=np.float64)
-                # ensemble_vec_mean[:,0] = np.mean(ensemble_vec, axis=1)
-                # ensemble_vec_full[:,:,0] = ensemble_vec
-                # ensemble_bg[:,0] = ensemble_vec_mean[:,0]
-
-
-               
-                
+                ens_mean = ParallelManager().compute_mean_matrix_from_root(ensemble_vec, shape_ens[0], params['Nens'], comm_world, root=0)
+                parallel_write_full_ensemble_from_root(0, ens_mean, params,ensemble_vec,comm_world)
                 
             elif params["sequential_run"]:
                 comm_world.Barrier()
