@@ -7,6 +7,7 @@
 import os
 import sys
 import re
+import time
 import subprocess
 import h5py
 import numpy as np
@@ -221,4 +222,59 @@ def icesee_get_index(vec, vec_inputs, **kwargs):
 
     local_size_per_rank = kwargs.get('dim_list', None)
     return var_indices, index_map, local_size_per_rank[rank]
-            
+
+# Refined ANSI color codes (softer, professional tones)
+COLORS = {
+    "GRAY": "\033[90m",    # For borders (subtle gray)
+    "CYAN": "\033[36m",    # For title (calm cyan)
+    "GREEN": "\033[32m",   # For computational time (muted green)
+    "MAGENTA": "\033[35m", # For wall-clock time (soft magenta)
+    "RESET": "\033[0m"
+}
+
+def format_time(seconds: float) -> str:
+    """Convert seconds to a formatted HR:MIN:SEC string with milliseconds."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds % 1) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+
+def display_timing(computational_time: float, wallclock_time: float) -> None:
+    """Display computational and wall-clock times with perfectly aligned formatting."""
+    # Formatted time strings
+    comp_time_str = format_time(computational_time)
+    wall_time_str = format_time(wallclock_time)
+    
+    # Content lines (no trailing spaces after emojis)
+    title = "[ICESEE] Performance Metrics"
+    comp_line = f"Computational Time (Σ): {comp_time_str} (HR:MIN:SEC.ms) ⏱️"
+    wall_line = f"Wall-Clock Time (max):  {wall_time_str} (HR:MIN:SEC.ms) 🕒"
+    
+    # Calculate max width based on plain text length (excluding ANSI codes)
+    max_content_width = max(len(title), len(comp_line), len(wall_line))
+    box_width = max_content_width + 2  # 2 for '║' on each side + 2 for padding
+    
+    # Box drawing
+    header = f"{COLORS['GRAY']}╔{'═' * box_width}╗{COLORS['RESET']}"
+    footer = f"{COLORS['GRAY']}╚{'═' * box_width}╝{COLORS['RESET']}"
+    
+    # Pad lines to exact width, ensuring no extra spaces
+    def pad_line(text: str) -> str:
+        padding = " " * (max_content_width - len(text))
+        return f"{COLORS['GRAY']}║ {text}{padding} ║{COLORS['RESET']}"
+    
+    def pad_line_comp(text: str) -> str:
+        padding = " " * (max_content_width - len(text)+1)
+        return f"{COLORS['GRAY']}║ {text}{padding} ║{COLORS['RESET']}"
+    
+    def pad_line_wall(text: str) -> str:
+        padding = " " * (max_content_width - len(text)-5)
+        return f"{COLORS['GRAY']}║ {text}{padding} ║{COLORS['RESET']}"
+    
+    # Output with strict alignment
+    print(f"\n{header}")
+    print(f"{COLORS['CYAN']}{pad_line(title)}{COLORS['RESET']}")
+    print(f"{COLORS['GREEN']}{pad_line_comp(comp_line)}{COLORS['RESET']}")
+    print(f"{COLORS['MAGENTA']}{pad_line_wall(wall_line)}{COLORS['RESET']}")
+    print(footer, flush=True)  # No '\n' after footer to avoid extra line

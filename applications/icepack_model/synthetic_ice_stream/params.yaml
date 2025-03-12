@@ -52,9 +52,9 @@ enkf-parameters:
   parameter_estimation: True # parameter estimation flag: True, False
 
   # nurged parameters
-  h_nurge_ic: 10         # nurged increment for initial thickness
+  h_nurge_ic: 100         # nurged increment for initial thickness
   u_nurge_ic: 0         # nurged increment for initial velocity
-  nurged_entries: 10     # number of nurged entries
+  nurged_entries_percentage: 0.15 #%     # percentage of nurged entries in the state vector
 
   # enkf model parameters
   model_name: "icepack"               # name of the model

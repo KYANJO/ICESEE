@@ -134,8 +134,7 @@ class ParallelManager:
         seed = comm_world.bcast(seed, root=0)
         
         # Set the seed for NumPy's RNG
-        # np.random.seed(seed + rank_world)  # Offset by rank for unique sequences (optional)
-        np.random.seed(seed)
+        np.random.seed(seed + rank_world)  # Offset by rank for unique sequences on every rank
         
         return seed
 

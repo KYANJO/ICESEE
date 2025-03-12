@@ -17,6 +17,7 @@ import bigmpi4py as BM # BigMPI for large data transfer and communication
 import gc # garbage collector to free up memory
 import copy
 import re
+import time
 import numexpr as ne # for fast numerical computations
 
 
@@ -33,6 +34,7 @@ from utils import *                                                # utility fun
 from EnKF.python_enkf.EnKF import EnsembleKalmanFilter as EnKF     # Ensemble Kalman Filter
 from supported_models import SupportedModels                       # supported models for data assimilation routine
 from localization_func import localization                         # localization function for EnKF
+from tools import display_timing
 
 # ---- Run model with EnKF ----
 def gaspari_cohn(r):
@@ -359,6 +361,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 sub_shape = model_kwargs['dim_list'][sub_rank]
                 model_kwargs.update({"statevec_ens":np.zeros((sub_shape, params["Nens"]))})
                 ensemble_vec, shape_ens  = model_module.initialize_ensemble_debug(color,**model_kwargs)
+                # add noise to the mean of the ensemble
                 ens_mean = ParallelManager().compute_mean_matrix_from_root(ensemble_vec, shape_ens[0], params['Nens'], comm_world, root=0)
                 parallel_write_full_ensemble_from_root(0, ens_mean, params,ensemble_vec,comm_world)
                 # -----------------------------------------------------
@@ -844,6 +847,11 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         # Stack all variables into a single array
                         stacked = np.hstack([global_data[key] for key in updated_state.keys()])
                         shape_ = np.array(stacked.shape, dtype=np.int32)
+                        # hdim = stacked.shape[0] // params["total_state_param_vars"]
+                        # state_block_size = hdim * params["num_state_vars"]  # Compute the state block size
+                        # Q_err = Q_err[:state_block_size, :state_block_size]
+                        # q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                        # stacked[:state_block_size] = stacked[:state_block_size] + q0[:state_block_size]
 
                     else:
                         shape_ = np.empty(2, dtype=np.int32)
@@ -1171,11 +1179,23 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
     # Reduce elapsed time across all processors (sum across ranks)
     total_elapsed_time = comm_world.allreduce(elapsed_time, op=MPI.SUM)
+    total_wall_time = comm_world.allreduce(elapsed_time, op=MPI.MAX)
 
     # Display elapsed time on rank 0
     if rank_world == 0:
-        formatted_time = total_elapsed_time / 3600  # Convert to hours
-        print(f"\n🧊 [ICESEE] Total Computation Time: {formatted_time:.2f} hours ⏱️\n")
+        display_timing(total_elapsed_time, total_wall_time)
+        # computational time
+        # hours = int(total_elapsed_time // 3600)
+        # minutes = int((total_elapsed_time % 3600) // 60)
+        # seconds = int(total_elapsed_time % 60)
+        # formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        # # total wall-clock time
+        # hours = int(total_wall_time // 3600)
+        # minutes = int((total_wall_time % 3600) // 60)
+        # seconds = int(total_wall_time % 60)
+        # formatted_wall_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        # print(f"\n🧊 [ICESEE] Wall-Clock Time: {formatted_time} (HR:MIN:SEC) ⏱️\n")
+        # print(f"\n🧊 [ICESEE] Total Wall-Clock Time: {formatted_wall_time} (HR:MIN:SEC) ⏱️\n")
     
 
 

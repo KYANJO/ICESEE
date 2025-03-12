@@ -49,7 +49,7 @@ params["nd"]=  h0.dat.data.size * params["total_state_param_vars"] # get the siz
 kwargs.update({"a":a, "h0":h0, "u0":u0, "C":C, "A":A,"Q":Q,"V":V, "da":float(modeling_params["da"]),
         "b":b, "dt":params["dt"], "seed":float(enkf_params["seed"]), "x":x, "y":y,
         "Lx":Lx, "Ly":Ly, "nx":nx, "ny":ny, "h_nurge_ic":float(enkf_params["h_nurge_ic"]), 
-        "u_nurge_ic":float(enkf_params["u_nurge_ic"]),"nurged_entries":float(enkf_params["nurged_entries"]),
+        "u_nurge_ic":float(enkf_params["u_nurge_ic"]),"nurged_entries_percentage":float(enkf_params["nurged_entries_percentage"]),
         "a_in_p":float(modeling_params["a_in_p"]), "da_p":float(modeling_params["da_p"]),
         "solver":solver_weertman,
         "a_p":a_p, "b_in":b_in, "b_out":b_out,

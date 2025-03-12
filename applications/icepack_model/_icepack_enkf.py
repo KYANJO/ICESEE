@@ -166,7 +166,7 @@ def generate_nurged_state(**kwargs):
     da = kwargs.get('da', None)
     h_nurge_ic      = kwargs.get('h_nurge_ic', None)
     u_nurge_ic      = kwargs.get('u_nurge_ic', None)
-    nurged_entries  = kwargs.get('nurged_entries', None)
+    nurged_entries_percentage  = kwargs.get('nurged_entries_percentage', None)
 
     statevec_nurged = kwargs["statevec_nurged"]
 
@@ -179,12 +179,14 @@ def generate_nurged_state(**kwargs):
     #  create a bump -100 to 0
     # h_indx = int(np.ceil(nurged_entries+1))
     hdim = vecs['h'].shape[0]
-    if 0.5*hdim > int(np.ceil(nurged_entries+1)):
-        h_indx = int(np.ceil(nurged_entries+1))
-    else:
-        # 5% of the hdim so that the bump is not too large
-        h_indx = int(np.ceil(hdim*0.025))
-        # h_indx = int(np.ceil(0.05*nurged_entries+1))
+    h_indx = int(np.ceil(nurged_entries_percentage*hdim+1))
+    # if 0.5*hdim > int(np.ceil(nurged_entries+1)):
+    #     nurged_entries = nurged_entries_percentage*hdim
+    #     h_indx = int(np.ceil(nurged_entries+1))
+    # else:
+    #     # 5% of the hdim so that the bump is not too large
+    #     h_indx = int(np.ceil(hdim*0.025))
+    #     # h_indx = int(np.ceil(0.05*nurged_entries+1))
    
     # u_indx = int(np.ceil(u_nurge_ic+1))
     u_indx = 1
@@ -417,10 +419,13 @@ def initialize_ensemble_debug(color,**kwargs):
     C  = kwargs.get('C', None)
     Q  = kwargs.get('Q', None)
     V  = kwargs.get('V', None)
+    a_in_p = kwargs.get('a_in_p', None)
+    da_p = kwargs.get('da_p', None)
+    da = kwargs.get('da', None)
     solver = kwargs.get('solver', None)
     h_nurge_ic      = kwargs.get('h_nurge_ic', None)
     u_nurge_ic      = kwargs.get('u_nurge_ic', None)
-    nurged_entries  = kwargs.get('nurged_entries', None)
+    nurged_entries_percentage  = kwargs.get('nurged_entries_percentage', None)
     statevec_ens    = kwargs["statevec_ens"]
     from mpi4py import MPI
 
@@ -439,13 +444,15 @@ def initialize_ensemble_debug(color,**kwargs):
     vecs, indx_map, dim_per_proc = icesee_get_index(statevec_ens, vec_inputs, **kwargs)
 
     # --------------------*
-    statevec_nurged = generate_nurged_state(**kwargs)
-    h_perturbed = statevec_nurged[indx_map["h"],0]
+    # statevec_nurged = generate_nurged_state(**kwargs)
+    # h_perturbed = statevec_nurged[indx_map["h"],0]
+    h_perturbed = h0.dat.data_ro
     hdim = vecs['h'].shape[0]
-    if 0.5*hdim > int(np.ceil(nurged_entries+1)):
-        h_indx = int(np.ceil(nurged_entries+1))
-    else:
-        h_indx = int(np.ceil(hdim*0.025))
+    h_indx = int(np.ceil(nurged_entries_percentage*hdim+1))
+    # if 0.5*hdim > int(np.ceil(nurged_entries+1)):
+    #     h_indx = int(np.ceil(nurged_entries+1))
+    # else:
+    #     h_indx = int(np.ceil(hdim*0.025))
     h_bump = np.linspace(-h_nurge_ic,0,h_indx)
     h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
     h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
@@ -461,8 +468,16 @@ def initialize_ensemble_debug(color,**kwargs):
     global_u = subcomm.gather(u0.dat.data_ro[:,0], root=0)
     global_v = subcomm.gather(u0.dat.data_ro[:,1], root=0)
     if kwargs["joint_estimation"]:
+        if kwargs["parameter_estimation"]:
+            a_in = firedrake.Constant(a_in_p)
+            da_  = firedrake.Constant(da_p)
+            a   = firedrake.interpolate(a_in + da_ * kwargs["x"] / kwargs["Lx"], Q)
+            global_smb = subcomm.gather(a.dat.data_ro, root=0)
+
+
         # global_smb = subcomm.gather(kwargs["a"].dat.data_ro, root=0)
-        global_smb = subcomm.gather(statevec_nurged[indx_map["smb"],0] + np.random.normal(0, 0.01, hdim), root=0) 
+        # global_smb = subcomm.gather(statevec_nurged[indx_map["smb"],0], root=0)
+        # global_smb = subcomm.gather(statevec_nurged[indx_map["smb"],0] + np.random.normal(0, 0.01, hdim), root=0) 
 
     # *** create a dataset for each state variable
     # dset_h = color_group.create_dataset("h", shape=global_h0.shape, dtype='f8')
@@ -483,19 +498,25 @@ def initialize_ensemble_debug(color,**kwargs):
         global_v = np.hstack(global_v)
         if kwargs["joint_estimation"]:
             global_smb = np.hstack(global_smb)
+            # add noise to smb   
+            global_smb = global_smb + np.random.normal(0, 0.01, global_smb.shape) 
         
 
         # add some kind of perturbations  with mean 0 and variance 1
-        # noise = np.random.normal(0, 0.1, global_h0.shape)
-        # global_h0 = global_h0 + noise
-        # global_u = global_u + noise
-        # global_v = global_v + noise
+        noise = np.random.normal(0, 0.1, global_h0.shape)
+        global_h0 = global_h0 + noise
+        global_u = global_u + noise
+        global_v = global_v + noise
         # stack all the state variables
         if kwargs["joint_estimation"]:
             stacked_state = np.hstack([global_h0,global_u,global_v,global_smb])
         else:
             stacked_state = np.hstack([global_h0,global_u,global_v])
         shape_ = stacked_state.shape
+        # hdim = shape_[0]//params['total_state_param_vars']
+        # state_size = hdim*params['num_state_vars']
+        # noise = np.random.normal(0, 0.1, (state_size,))  # Shape (1275, 4)
+        # stacked_state[:state_size] += noise
     else:
         shape_ = np.empty(2,dtype=int)
 
@@ -514,8 +535,16 @@ def initialize_ensemble_debug(color,**kwargs):
         statevec_ens = np.column_stack(all_colors)
         # print(f"[Debug]: all_colors shape: {all_colors.shape}")
         # add noise here to the ensemble members
-        noise = np.random.normal(0, 0.1, statevec_ens.shape)
-        statevec_ens = statevec_ens + noise
+        hdim = statevec_ens.shape[0]//params['total_state_param_vars']
+        state_size = hdim*params['num_state_vars']
+        # # noise = np.random.normal(0, 0.1, statevec_ens.shape)
+        # noise = np.random.normal(0, 0.1, (state_size, statevec_ens.shape[1]))  # Shape (1275, 4)
+        # statevec_ens[:state_size, :] += noise
+        # add some noise to smb
+        # if kwargs["joint_estimation"]:
+        #     noise = np.random.normal(0, 0.01, (hdim,params["Nens"])) 
+        #     statevec_ens[state_size:, :] += noise
+        
     else: 
         # None
         statevec_ens = np.empty((shape_[0], params['Nens']),dtype=float)
