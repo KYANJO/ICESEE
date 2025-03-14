@@ -160,7 +160,7 @@ def save_all_data(enkf_params=None, nofilter=None, **kwargs):
         )
 
 # ---- function to get the index of the variables in the vector dynamically
-def icesee_get_index(vec, vec_inputs, **kwargs):
+def icesee_get_index(vec, **kwargs):
     """
     Get the index of the variables in the vector dynamically.
 
@@ -176,6 +176,7 @@ def icesee_get_index(vec, vec_inputs, **kwargs):
         - index_map: Dictionary where keys are variable names and values are the indices corresponding to their slices
     """
     # -- get parameters
+    vec_inputs = kwargs.get("vec_inputs", None)
     params = kwargs.get("params", None)
     if params["default_run"]:
         comm = kwargs.get("subcomm", None)
@@ -223,22 +224,31 @@ def icesee_get_index(vec, vec_inputs, **kwargs):
     local_size_per_rank = kwargs.get('dim_list', None)
     return var_indices, index_map, local_size_per_rank[rank]
 
-# Refined ANSI color codes (softer, professional tones)
+# Refined ANSI color codes
 COLORS = {
-    "GRAY": "\033[90m",    # For borders (subtle gray)
-    "CYAN": "\033[36m",    # For title (calm cyan)
-    "GREEN": "\033[32m",   # For computational time (muted green)
-    "MAGENTA": "\033[35m", # For wall-clock time (soft magenta)
+    "GRAY": "\033[90m",    # Subtle gray for borders
+    "CYAN": "\033[36m",    # Calm cyan for title
+    "GREEN": "\033[32m",   # Muted green for computational time
+    "MAGENTA": "\033[35m", # Soft magenta for wall-clock time
     "RESET": "\033[0m"
 }
 
-def format_time(seconds: float) -> str:
+def format_time_(seconds: float) -> str:
     """Convert seconds to a formatted HR:MIN:SEC string with milliseconds."""
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
     millis = int((seconds % 1) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+
+def format_time(seconds: float) -> str:
+    """Convert seconds to a formatted DAY:HR:MIN:SEC string with milliseconds."""
+    days = int(seconds // 86400)  # 86400 seconds in a day
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds % 1) * 1000)
+    return f"{days:02d}:{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
 
 def display_timing(computational_time: float, wallclock_time: float) -> None:
     """Display computational and wall-clock times with perfectly aligned formatting."""
@@ -248,12 +258,12 @@ def display_timing(computational_time: float, wallclock_time: float) -> None:
     
     # Content lines (no trailing spaces after emojis)
     title = "[ICESEE] Performance Metrics"
-    comp_line = f"Computational Time (Σ): {comp_time_str} (HR:MIN:SEC.ms) ⏱️"
-    wall_line = f"Wall-Clock Time (max):  {wall_time_str} (HR:MIN:SEC.ms) 🕒"
+    comp_line = f"Computational Time (Σ): {comp_time_str} (DAY:HR:MIN:SEC.ms) ⏱️"
+    wall_line = f"Wall-Clock Time (max):  {wall_time_str} (DAY:HR:MIN:SEC.ms) 🕒"
     
     # Calculate max width based on plain text length (excluding ANSI codes)
     max_content_width = max(len(title), len(comp_line), len(wall_line))
-    box_width = max_content_width + 2  # 2 for '║' on each side + 2 for padding
+    box_width = max_content_width + 12  # 2 for '║' on each side + 2 for padding
     
     # Box drawing
     header = f"{COLORS['GRAY']}╔{'═' * box_width}╗{COLORS['RESET']}"
@@ -261,15 +271,15 @@ def display_timing(computational_time: float, wallclock_time: float) -> None:
     
     # Pad lines to exact width, ensuring no extra spaces
     def pad_line(text: str) -> str:
-        padding = " " * (max_content_width - len(text))
+        padding = " " * (max_content_width - len(text)+6+4)
         return f"{COLORS['GRAY']}║ {text}{padding} ║{COLORS['RESET']}"
     
     def pad_line_comp(text: str) -> str:
-        padding = " " * (max_content_width - len(text)+1)
+        padding = " " * (max_content_width - len(text)+7+4)
         return f"{COLORS['GRAY']}║ {text}{padding} ║{COLORS['RESET']}"
     
     def pad_line_wall(text: str) -> str:
-        padding = " " * (max_content_width - len(text)-5)
+        padding = " " * (max_content_width - len(text)+5+4)
         return f"{COLORS['GRAY']}║ {text}{padding} ║{COLORS['RESET']}"
     
     # Output with strict alignment

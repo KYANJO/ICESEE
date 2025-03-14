@@ -20,9 +20,6 @@ from scipy import linalg
 sys.path.insert(0, '../../config')
 from _utility_imports import icesee_get_index
 
-# --- globally define the state variables ---
-global vec_inputs 
-vec_inputs = ['h','u','v','smb']
 
 # --- Forecast step ---
 def forecast_step_single(ensemble=None, **kwargs):
@@ -60,10 +57,10 @@ def background_step(k=None, **kwargs):
     ub = Function(V)
 
      # --- define the state variables list ---
-    global vec_inputs 
+    vec_inputs = kwargs["vec_inputs"]
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_bg, vec_inputs, **kwargs)
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_bg, **kwargs)
 
     # fetch the state variables
     hb.dat.data[:]   = statevec_bg[indx_map["h"],k]
@@ -105,10 +102,10 @@ def generate_true_state(**kwargs):
     params = kwargs["params"]
     
     # --- define the state variables list ---
-    global vec_inputs 
+    vec_inputs = kwargs["vec_inputs"]
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_true, vec_inputs, **kwargs)
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_true, **kwargs)
     
     # --- fetch the state variables ---
     statevec_true[indx_map["h"],0] = h0.dat.data_ro
@@ -171,10 +168,10 @@ def generate_nurged_state(**kwargs):
     statevec_nurged = kwargs["statevec_nurged"]
 
      # --- define the state variables list ---
-    global vec_inputs 
+    vec_inputs = kwargs["vec_inputs"]
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_nurged, vec_inputs, **kwargs)
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_nurged, **kwargs)
 
     #  create a bump -100 to 0
     # h_indx = int(np.ceil(nurged_entries+1))
@@ -289,14 +286,6 @@ def initialize_ensemble(ens, **kwargs):
     nurged_entries_percentage  = kwargs.get('nurged_entries_percentage', None)
     statevec_ens    = kwargs["statevec_ens"]
 
-    # extract the ensemble size
-    N = params["Nens"]
-
-     # --- define the state variables list ---
-    global vec_inputs 
-
-    # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_ens, vec_inputs, **kwargs)
 
     # initialize the ensemble members
     # hdim = vecs['h'].shape[0]
@@ -308,6 +297,7 @@ def initialize_ensemble(ens, **kwargs):
     h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
     h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
     statevec_ens[:hdim,ens] = h_perturbed 
+    # h_perturbed = h0.dat.data_ro
 
     initialized_state = {'h': h_perturbed, 
                          'u': u0.dat.data_ro[:,0], 
@@ -355,10 +345,10 @@ def initialize_ensemble_debug(color,**kwargs):
     N = params["Nens"]
 
      # --- define the state variables list ---
-    global vec_inputs 
+    vec_inputs = kwargs["vec_inputs"] 
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_ens, vec_inputs, **kwargs)
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_ens, **kwargs)
 
     # --------------------*
     # statevec_nurged = generate_nurged_state(**kwargs)

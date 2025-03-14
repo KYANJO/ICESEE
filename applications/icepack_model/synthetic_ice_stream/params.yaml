@@ -37,6 +37,7 @@ enkf-parameters:
 
   num_state_vars: 3       # number of state variables  [h,u,v]
   num_param_vars: 1       # number of parameter variables [smb]
+  vec_inputs: ['h','u','v','smb']
 
   # Statistical parameters
   sig_model: 0.1          # model error standard deviation
@@ -60,6 +61,7 @@ enkf-parameters:
   model_name: "icepack"               # name of the model
   model_solver: "solver_weertman"     # name of the solver
   filter_type: "EnKF"               # name of the filter: EnKF, DEnKF, EnTKF, EnRSKF
+  local_analysis: False             # local analysis flag: True, False, global analysis is default
   parallel_flag: "MPI_model"             # parallel flag: Serial, MPI, MPI_model
   n_modeltasks: 1                     # number of model tasks (for MPI)
   commandlinerun: "True"              # command line run flag: True, False

@@ -178,6 +178,9 @@ if not flag_jupyter:
         "joint_estimation": bool(enkf_params.get("joint_estimation", False)),
         "parameter_estimation": bool(enkf_params.get("parameter_estimation", False)),
         "state_estimation": bool(enkf_params.get("state_estimation", False)),
+        "vec_inputs": enkf_params['vec_inputs'],
+        "global_analysis": bool(enkf_params.get("global_analysis", True)),
+        "local_analysis": bool(enkf_params.get("local_analysis", False))
     }
 
     if kwargs["joint_estimation"]:
@@ -193,3 +196,5 @@ if not flag_jupyter:
     params["number_obs_instants"] = num_observations
     kwargs["parallel_flag"]       = enkf_params.get("parallel_flag", "serial")
     kwargs["commandlinerun"]      = enkf_params.get("commandlinerun", False)
+
+ 
