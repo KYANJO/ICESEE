@@ -197,7 +197,7 @@ def run_model(ensemble, **kwargs):
     global vec_inputs 
 
     # call the icesee_get_index function to get the indices of the state variables
-    vecs, indx_map, dim_per_proc = icesee_get_index(ensemble, vec_inputs, **kwargs)
+    vecs, indx_map, dim_per_proc = icesee_get_index(ensemble,**kwargs)
 
     # joint estimation
     if kwargs["joint_estimation"]:

@@ -76,56 +76,56 @@ def parallel_write_ensemble_scattered(timestep, ensemble_mean, params, ensemble_
 
     comm.Barrier()
 
-# def parallel_write_full_ensemble_from_root__(full_ensemble=None, comm=None, output_file="ensemble_data.h5"):
-#     """
-#     Write ensemble data in parallel where full matrix exists on rank 0
-#     full_ensemble: complete matrix on rank 0 with shape (nd, Nens)
-#     """
-#     # MPI setup
-#     rank = comm.Get_rank()
-#     size = comm.Get_size()
+def parallel_write_data_from_root_2D(full_ensemble=None, comm=None, data_name=None, output_file="preliminary_data.h5"):
+    """
+    Write ensemble data in parallel where full matrix exists on rank 0
+    full_ensemble: complete matrix on rank 0 with shape (nd, Nens)
+    """
+    # MPI setup
+    rank = comm.Get_rank()
+    size = comm.Get_size()
 
-#     # Get dimensions on root and broadcast
-#     if rank == 0:
-#         nd = full_ensemble.shape[0]
-#         Nens = full_ensemble.shape[1]
-#         dtype = full_ensemble.dtype
-#     else:
-#         nd = None
-#         Nens = None
-#         dtype = None
+    # Get dimensions on root and broadcast
+    if rank == 0:
+        nd = full_ensemble.shape[0]
+        Nens = full_ensemble.shape[1]
+        dtype = full_ensemble.dtype
+    else:
+        nd = None
+        Nens = None
+        dtype = None
     
-#     nd = comm.bcast(nd, root=0)
-#     Nens = comm.bcast(Nens, root=0)
-#     dtype = comm.bcast(dtype, root=0)
+    nd = comm.bcast(nd, root=0)
+    Nens = comm.bcast(Nens, root=0)
+    dtype = comm.bcast(dtype, root=0)
 
-#     # Calculate local chunk sizes
-#     local_nd = nd // size  # Base size per rank
-#     remainder = nd % size  # Extra rows to distribute
+    # Calculate local chunk sizes
+    local_nd = nd // size  # Base size per rank
+    remainder = nd % size  # Extra rows to distribute
     
-#     # Determine local size and offset for each rank
-#     if rank < remainder:
-#         local_nd += 1  # Distribute remainder to first few ranks
-#     offset = rank * (nd // size) + min(rank, remainder)
+    # Determine local size and offset for each rank
+    if rank < remainder:
+        local_nd += 1  # Distribute remainder to first few ranks
+    offset = rank * (nd // size) + min(rank, remainder)
 
-#     # Scatter the data (only if rank 0 has it)
-#     if rank == 0:
-#         chunks = np.array_split(full_ensemble, size, axis=0)
-#     else:
-#         chunks = None
+    # Scatter the data (only if rank 0 has it)
+    if rank == 0:
+        chunks = np.array_split(full_ensemble, size, axis=0)
+    else:
+        chunks = None
     
-#     local_chunk = BM.scatter(chunks, comm)
+    local_chunk = BM.scatter(chunks, comm)
     
-#     # comm.barrier() # wait for all processes to reach this point
-#     output_file = os.path.join("_modelrun_datasets", output_file)
+    # comm.barrier() # wait for all processes to reach this point
+    output_file = os.path.join("_modelrun_datasets", output_file)
 
-#     # Open file in parallel mode
-#     with h5py.File(output_file, 'w', driver='mpio', comm=comm) as f:
-#         # Create dataset with total dimensions
-#         dset = f.create_dataset('ensemble', (nd, Nens), dtype=dtype)
+    # Open file in parallel mode
+    with h5py.File(output_file, 'w', driver='mpio', comm=comm) as f:
+        # Create dataset with total dimensions
+        dset = f.create_dataset(data_name, (nd, Nens), dtype=dtype)
         
-#         # Each rank writes its chunk
-#         dset[offset:offset + local_nd, :] = local_chunk
+        # Each rank writes its chunk
+        dset[offset:offset + local_nd, :] = local_chunk
 
     
 def parallel_write_full_ensemble_from_root(timestep, ensemble_mean, params,full_ensemble=None, comm=None, output_file="ensemble_data.h5"):
@@ -194,8 +194,9 @@ def parallel_write_full_ensemble_from_root(timestep, ensemble_mean, params,full_
                 ens_mean[:,timestep] = ensemble_mean
     comm.Barrier()
 
-# ============================ EnKF functions ============================  
-def EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d):
+# ============================ EnKF functions ============================ 
+# def EnKF_X5(Cov_obs, Nens, D, HA, Eta, d): 
+def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, h, d, model_kwargs):
     """
     Function to compute the X5 matrix for the EnKF
         - ensemble_vec: ensemble matrix of size (ndxNens)
@@ -203,6 +204,10 @@ def EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d):
         - Nens: ensemble size
         - d: observation vector
     """
+    params = model_kwargs.get("params")
+    comm_world = model_kwargs.get("comm_world")
+
+    # ----parallelize this step
     Eta = np.zeros((d.shape[0], Nens)) # mxNens, ensemble pertubations
     D   = np.zeros_like(Eta) # mxNens #virtual observations
     HA  = np.zeros_like(D)
@@ -210,7 +215,8 @@ def EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d):
         Eta[:,ens] = np.random.multivariate_normal(mean=np.zeros(d.shape[0]), cov=Cov_obs) 
         D[:,ens] = d + Eta[:,ens]
         HA[:,ens] = h(ensemble_vec[:,ens])
-    
+    # ---------------------------------------
+
     # --- compute the innovations D` = D-HA
     Dprime = D - HA # mxNens
 
@@ -260,7 +266,7 @@ def EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d):
     
     # compute X2 = X1*Dprime # Nens x Nens
     X2 = np.dot(X1, Dprime)
-    del Cov_obs, sig, X1, Dprime; gc.collect()
+    # del Cov_obs, sig, X1, Dprime; gc.collect()
     
     # print(f"Rank: {rank_world} X2 shape: {X2.shape}")
     #  compute X3 = U*X2 # m_obs x Nens
@@ -276,9 +282,67 @@ def EnKF_X5(ensemble_vec, Cov_obs, Nens, h, d):
     X5 = X4 + np.eye(Nens)
     del X4; gc.collect()
 
-    return X5
+    # ===local computation
+    if model_kwargs.get("local_analysis",False):
+        # for each grid point
+        analysis_vec_ij = np.empty_like(ensemble_vec)
+        dim = ensemble_vec.shape[0]//params["total_state_param_vars"]
+        for ij in range(dim):
+            Eta_local = np.zeros(Nens)
+            D_local   = np.zeros_like(Eta_local)
+            HA_local  = np.zeros_like(D_local)
+            for ens in range(Nens):
+                for var in range(params["total_state_param_vars"]):
+                    idx = var*dim + ij
+                    d_loc = d[idx]
+                    Cov_obs_loc = Cov_obs[idx,idx]
+                    Eta_local[ens] = np.random.multivariate_normal(mean=0, cov=Cov_obs_loc)
+                    D_local[ens] = d_loc + Eta_local[ens]
+                    HA_local[ens] = h(ensemble_vec[idx,ens])
 
-def analysis_enkf_update(k,ens_mean,params,ensemble_vec, shape_ens, X5, comm_world):
+            Dprime_local = D_local - HA_local
+            HAbar_local = np.mean(HA_local)
+            HAprime_local = HA_local - HAbar_local
+            m_obs_local = d_loc.shape[0]
+            nrmin_local = min(m_obs_local, Nens)
+            HAprime_eta_local = HAprime_local + Eta_local
+            U_local, sig_local, _ = np.linalg.svd(HAprime_eta_local, full_matrices=False)
+            sig_local = sig_local**2
+            sigsum_local = np.sum(sig_local[:nrmin_local])
+            sigsum1_local = 0.0
+            nrsigma_local = 0
+            for i in range(nrmin_local):
+                if sigsum1_local / sigsum_local < 0.999:
+                    nrsigma_local += 1
+                    sigsum1_local += sig_local[i]
+                    sig_local[i] = 1.0 / sig_local[i]
+                else:
+                    sig_local[i:nrmin_local] = 0.0
+                    break
+            X1_local = np.empty((nrmin_local, m_obs_local))
+            for j in range(m_obs_local):
+                for i in range(nrmin_local):
+                    X1_local[i,j] = sig_local[i]*U_local[j,i]
+            X2_local = np.dot(X1_local, Dprime_local)
+            X3_local = np.dot(U_local, X2_local)
+            X4_local = np.dot(HAprime_local.T, X3_local)
+            X5_local = X4_local + np.eye(Nens)
+
+            # compute the diff
+            X5_diff = X5_local - X5
+
+            # compute analysis vector
+            for var in range(params["total_state_param_vars"]):
+                idx = var*dim + ij
+                analysis_vec_ij[ij,:] = np.dot(ensemble_vec[idx,:], X5) + np.dot(ensemble_vec[idx,:], X5_diff)
+        
+    else:
+        analysis_vec_ij = None
+        
+
+    return X5, analysis_vec_ij
+
+def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij,UtilsFunctions,model_kwargs):
     """
     Function to perform the analysis update using the EnKF
         - broadcast X5 to all processors
@@ -287,27 +351,49 @@ def analysis_enkf_update(k,ens_mean,params,ensemble_vec, shape_ens, X5, comm_wor
         - do the ensemble analysis update: A_j = Fj*X5
         - gather from all processors
     """
-    # get the rank and size of the world communicator
-    rank_world = comm_world.Get_rank()
-    # broadcast X5 to all processors
-    X5 = BM.bcast(X5, comm=comm_world)
+    
+    
+    if model_kwargs.get("local_analysis",False):
+        pass
+    else:
+        params = model_kwargs.get("params")
+        comm_world = model_kwargs.get("comm_world")
+        # get the rank and size of the world communicator
+        rank_world = comm_world.Get_rank()
+        # broadcast X5 to all processors
+        X5 = BM.bcast(X5, comm=comm_world)
+        # X5_diff = BM.bcast(X5_diff, comm=comm_world)
 
-    # initialize the an empty ensemble vector for the rest of the processors
-    if rank_world != 0:
-        ensemble_vec = np.empty(shape_ens, dtype=np.float64)
+        # initialize the an empty ensemble vector for the rest of the processors
+        if rank_world != 0:
+            ensemble_vec = np.empty(shape_ens, dtype=np.float64)
 
-    # --- scatter ensemble_vec to all processors ---
-    scatter_ensemble = BM.scatter(ensemble_vec, comm_world)
+        # --- scatter ensemble_vec to all processors ---
+        scatter_ensemble = BM.scatter(ensemble_vec, comm_world)
+        # -* instead of using scattter from root, if the ensemble vec doesn't fit in memory then
+        # with h5py.File("ensemble_data.h5", 'r', driver='mpio', comm=comm_world) as f:
+        #     scatter_ensemble = f['ensemble']
+        #     total_rows = scatter_ensemble.shape[0]
 
-    # do the ensemble analysis update: A_j = Fj*X5 
-    analysis_vec = np.dot(scatter_ensemble, X5)
+        #     # calculate rows per rank
+        #     rows_per_rank = total_rows // comm_world.Get_size()
+        #     # remainder = total_rows % comm_world.Get_size()
+        #     start_row = rank_world * rows_per_rank 
+        #     end_row = start_row + rows_per_rank if rank_world != comm_world.Get_size()-1 else total_rows
 
-    # gather from all processors
-    # ensemble_vec = BM.allgather(analysis_vec, comm_world)
-    parallel_write_ensemble_scattered(k+1,ens_mean, params,analysis_vec, comm_world)
+        #     # Each rank reads its chunk from the dataset
+        #     scatter_ensemble = scatter_ensemble[start_row:end_row, :, k]
+        # do the ensemble analysis update: A_j = Fj*X5 
+        analysis_vec = np.dot(scatter_ensemble, X5)
 
-    # clean the memory
-    del scatter_ensemble, analysis_vec; gc.collect()
+        analysis_vec = UtilsFunctions(params,  analysis_vec).inflate_ensemble(in_place=True)
+
+        # gather from all processors
+        # ensemble_vec = BM.allgather(analysis_vec, comm_world)
+        parallel_write_ensemble_scattered(k+1,ens_mean, params,analysis_vec, comm_world)
+
+        # clean the memory
+        del scatter_ensemble, analysis_vec; gc.collect()
 
     return ensemble_vec
 # ============================ EnKF functions ============================
