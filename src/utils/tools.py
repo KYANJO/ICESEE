@@ -198,7 +198,8 @@ def icesee_get_index(vec, **kwargs):
     else:
         # MPI case
         size_world = kwargs.get("comm_world").Get_size()  # Get the total number of processors
-        if params["even_distribution"] or (params["default_run"] and size_world <= params["Nens"]):
+        # if params["even_distribution"] or (params["default_run"] and size_world <= params["Nens"]):
+        if params["even_distribution"]:
             rank = 0 # Set rank to 0 for even distribution
             dim = dim_list_param[rank]
             offsets = [0]

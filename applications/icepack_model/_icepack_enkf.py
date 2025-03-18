@@ -98,11 +98,7 @@ def generate_true_state(**kwargs):
     u0 = kwargs.get('u0', None)
     solver = kwargs.get('solver', None)
     statevec_true = kwargs["statevec_true"]
-
     params = kwargs["params"]
-    
-    # --- define the state variables list ---
-    vec_inputs = kwargs["vec_inputs"]
 
     # call the icesee_get_index function to get the indices of the state variables
     vecs, indx_map, dim_per_proc = icesee_get_index(statevec_true, **kwargs)
@@ -137,6 +133,83 @@ def generate_true_state(**kwargs):
     if kwargs["joint_estimation"]:
         update_state['smb'] = statevec_true[indx_map["smb"],:]
     return update_state
+
+def generate_true_state_debug(**kwargs):
+    """generate the true state of the model"""
+
+    # unpack the **kwargs
+    a  = kwargs.get('a', None)
+    b  = kwargs.get('b', None)
+    dt = kwargs.get('dt', None)
+    A  = kwargs.get('A', None)
+    C  = kwargs.get('C', None)
+    Q  = kwargs.get('Q', None)
+    V  = kwargs.get('V', None)
+    h0 = kwargs.get('h0', None)
+    u0 = kwargs.get('u0', None)
+    solver = kwargs.get('solver', None)
+    statevec_true = kwargs["statevec_true"]
+    params = kwargs["params"]
+
+    # call the icesee_get_index function to get the indices of the state variables
+    vecs, indx_map, dim_per_proc = icesee_get_index(statevec_true, **kwargs)
+    
+    # --- fetch the state variables ---
+    # statevec_true[indx_map["h"],0] = h0.dat.data_ro
+    # statevec_true[indx_map["u"],0] = u0.dat.data_ro[:,0]
+    # statevec_true[indx_map["v"],0] = u0.dat.data_ro[:,1]
+    h_0 = h0.dat.data_ro
+    u_0 = u0.dat.data_ro[:,0]
+    v_0 = u0.dat.data_ro[:,1]
+
+    # intialize the accumulation rate if joint estimation is enabled at the initial time step
+    if kwargs["joint_estimation"]:
+        # statevec_true[indx_map["smb"],0] = a.dat.data_ro
+        a_0 = a.dat.data_ro
+    true_state = np.zeros((h_0.size + u_0.size + v_0.size+a_0.size, params['nt']+1))
+    true_state[:h_0.size,0] = h_0
+    true_state[h_0.size:h_0.size+u_0.size,0] = u_0
+    true_state[h_0.size+u_0.size:h_0.size+u_0.size+v_0.size,0] = v_0
+    if kwargs["joint_estimation"]:
+        true_state[h_0.size+u_0.size+v_0.size:,0] = a_0
+
+    h = h0.copy(deepcopy=True)
+    u = u0.copy(deepcopy=True)
+    for k in range(params['nt']):
+        # call the ice stream model to update the state variables
+        h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
+
+        # statevec_true[indx_map["h"],k+1] = h.dat.data_ro
+        # statevec_true[indx_map["u"],k+1] = u.dat.data_ro[:,0]
+        # statevec_true[indx_map["v"],k+1] = u.dat.data_ro[:,1]
+        true_state[:h_0.size,k+1] = h.dat.data_ro
+        true_state[h_0.size:h_0.size+u_0.size,k+1] = u.dat.data_ro[:,0]
+        true_state[h_0.size+u_0.size:h_0.size+u_0.size+v_0.size,k+1] = u.dat.data_ro[:,1]
+
+        # update the accumulation rate if joint estimation is enabled
+        if kwargs["joint_estimation"]:
+            # statevec_true[indx_map["smb"],k+1] = a.dat.data_ro
+            true_state[h_0.size+u_0.size+v_0.size:,k+1] = a.dat.data_ro
+    
+    # gather from all the processors
+    # subcomm = kwargs.get("subcomm", None)
+    # true_state = subcomm.gather(true_state, root=0)
+    # if subcomm.Get_rank() == 0:
+    #     print(f"{[arr.shape for arr in true_state]}")
+
+    # exit()
+    # update_state = {'h': statevec_true[indx_map["h"],:], 
+    #                 'u': statevec_true[indx_map["u"],:], 
+    #                 'v': statevec_true[indx_map["v"],:]}
+    update_state = {'h': true_state[:h_0.size,:], 
+                    'u': true_state[h_0.size:h_0.size+u_0.size,:], 
+                    'v': true_state[h_0.size+u_0.size:h_0.size+u_0.size+v_0.size,:]}
+    # -- for joint estimation --
+    if kwargs["joint_estimation"]:
+        # update_state['smb'] = statevec_true[indx_map["smb"],:]
+        update_state['smb'] = true_state[h_0.size+u_0.size+v_0.size:,:]
+    return update_state
+
 
 def generate_nurged_state(**kwargs):
     """generate the nurged state of the model"""
@@ -197,7 +270,7 @@ def generate_nurged_state(**kwargs):
     u_with_bump = u_bump + u0.dat.data_ro[:h_indx,0]
     v_with_bump = u_bump + u0.dat.data_ro[:h_indx,1]
 
-    h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
+    h_perturbed_0 = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
     u_perturbed = np.concatenate((u_with_bump, u0.dat.data_ro[h_indx:,0]))
     v_perturbed = np.concatenate((v_with_bump, u0.dat.data_ro[h_indx:,1]))
 
@@ -205,7 +278,7 @@ def generate_nurged_state(**kwargs):
     if u_nurge_ic != 0.0:
         h = Function(Q)
         u = Function(V)
-        h.dat.data[:]   = h_perturbed
+        h.dat.data[:]   = h_perturbed_0
         u.dat.data[:,0] = u_perturbed
         u.dat.data[:,1] = v_perturbed
         h0 = h.copy(deepcopy=True)
@@ -217,13 +290,13 @@ def generate_nurged_state(**kwargs):
         u_perturbed = u.dat.data_ro[:,0]
         v_perturbed = u.dat.data_ro[:,1]
 
-    statevec_nurged[indx_map["h"],0]   = h_perturbed
+    statevec_nurged[indx_map["h"],0]   = h_perturbed_0
     statevec_nurged[indx_map["u"],0]   = u_perturbed
     statevec_nurged[indx_map["v"],0]   = v_perturbed
 
     h = Function(Q)
     u = Function(V)
-    h.dat.data[:] = h_perturbed
+    h.dat.data[:] = h_perturbed_0
     u.dat.data[:,0] = u_perturbed
     u.dat.data[:,1] = v_perturbed
     h0 = h.copy(deepcopy=True)
@@ -296,7 +369,7 @@ def initialize_ensemble(ens, **kwargs):
     h_bump = np.linspace(-h_nurge_ic,0,h_indx)
     h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
     h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
-    statevec_ens[:hdim,ens] = h_perturbed 
+    # statevec_ens[:hdim,ens] = h_perturbed 
     # h_perturbed = h0.dat.data_ro
 
     initialized_state = {'h': h_perturbed, 

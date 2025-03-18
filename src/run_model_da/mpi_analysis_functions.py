@@ -296,8 +296,11 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, h, d, model_kwargs):
                     idx = var*dim + ij
                     d_loc = d[idx]
                     Cov_obs_loc = Cov_obs[idx,idx]
-                    Eta_local[ens] = np.random.multivariate_normal(mean=0, cov=Cov_obs_loc)
+                    mean = np.zeros(1)
+                    # Eta_local[ens] = np.random.multivariate_normal(mean, cov=Cov_obs_loc)
+                    Eta_local[ens] = np.random.normal(0, np.sqrt(Cov_obs_loc))
                     D_local[ens] = d_loc + Eta_local[ens]
+                    print(len(ensemble_vec[idx,ens]))
                     HA_local[ens] = h(ensemble_vec[idx,ens])
 
             Dprime_local = D_local - HA_local
