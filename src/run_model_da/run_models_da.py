@@ -143,7 +143,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 statevec_true = np.zeros([global_shape, params["nt"] + 1])
                 model_kwargs.update({"statevec_true": statevec_true})
                 # generate the true state
-                updated_true_state = model_module.generate_true_state(**model_kwargs)
+                updated_true_state = model_module.generate_true_state_debug(**model_kwargs)
                 # ensemble_true_state = gather_and_broadcast_data_default_run(updated_true_state, subcomm, sub_rank, comm_world, rank_world, params)
                 global_data = {key: subcomm.gather(data, root=0) for key, data in updated_true_state.items()}
 
@@ -734,8 +734,10 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             # q0 = np.random.multivariate_normal(np.zeros(nd), Q_err)
                             Q_err = Q_err[:state_block_size,:state_block_size]
                             q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
-
                             ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] + q0[:state_block_size]
+                            
+                            # mean_x = np.mean(ensemble_vec[:state_block_size], axis=1)[:,np.newaxis]
+                            # ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] - mean_x
                             # Ensure all ranks in the subcommunicator are synchronized before moving on
                             # subcomm.Barrier()
 

@@ -62,7 +62,11 @@ class UtilsFunctions:
         Returns:
         numpy array: The reduced observation vector.
         """
-        n = virtual_obs.shape[0]
+        # check if virtual_obs is a scalar
+        if np.isscalar(virtual_obs):
+            n = len(virtual_obs)
+        else:
+            n = virtual_obs.shape[0]
 
         return np.dot(self.H_matrix(n), virtual_obs)
 
