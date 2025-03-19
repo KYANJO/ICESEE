@@ -24,7 +24,7 @@ class SupportedModels:
     # Dictionary mapping model names to their respective import paths and states
     MODEL_CONFIG = {
         "icepack": {
-            "module": "icepack_model.icepack_enkf",
+            "module": "icepack_model._icepack_enkf",
             "description": "Icepack model",
             "status": "supported",
         },
@@ -89,7 +89,7 @@ class SupportedModels:
         try:
             # Dynamically import the model 
             model_module = importlib.import_module(model_info["module"])
-            print(f"Successfully loaded {model_info['description']} from {model_info['module']}.")
+            # print(f"Successfully loaded {model_info['description']} from {model_info['module']}.")
             return model_module
         except ImportError as e:
             raise ImportError(f"Failed to import module for model '{self.model}': {e}")

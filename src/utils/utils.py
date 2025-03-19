@@ -62,7 +62,11 @@ class UtilsFunctions:
         Returns:
         numpy array: The reduced observation vector.
         """
-        n = virtual_obs.shape[0]
+        # check if virtual_obs is a scalar
+        if np.isscalar(virtual_obs):
+            n = len(virtual_obs)
+        else:
+            n = virtual_obs.shape[0]
 
         return np.dot(self.H_matrix(n), virtual_obs)
 
@@ -107,7 +111,7 @@ class UtilsFunctions:
         # Find indices of observation times in the original array
         obs_idx = np.array([np.where(t == time)[0][0] for time in obs_t if time in t]).astype(int)
 
-        print(f"Number of observation instants: {len(obs_idx)} at times: {t[obs_idx]}")
+        # print(f"Number of observation instants: {len(obs_idx)} at times: {t[obs_idx]}")
         
         # number of observation instants
         num_observations = len(obs_idx)
@@ -115,8 +119,9 @@ class UtilsFunctions:
         return obs_t, obs_idx, num_observations
     
     # --- Create synthetic observations ---
-    def _create_synthetic_observations(self,statevec_true,**kwargs):
+    def _create_synthetic_observations(self,**kwargs):
         """create synthetic observations"""
+        statevec_true = kwargs.get('statevec_true', None)
         nd, nt = statevec_true.shape
 
         obs_t, ind_m, m_obs = self.generate_observation_schedule(**kwargs)
@@ -345,6 +350,7 @@ class UtilsFunctions:
                 forward_ens = self.ensemble
 
                 # get initial sample correlation btn the shuffled and forward ens
+                # sample_ind
                 # sample_correlations = self.compute_sample_correlations_vectorized(shuffled_ens, forward_ens)
                 sample_correlations = np.corrcoef(ensemble_init, forward_ens, rowvar=False)
                 
@@ -489,23 +495,30 @@ class UtilsFunctions:
         """
         # Compute Euclidean distance matrix
         distance_matrix = self.compute_euclidean_distance(grid_x, grid_y)
+        # print(distance_matrix)
 
         # Normalize distances by the localization radius
         # if is radius is a scalar
         if np.isscalar(localization_radius):
-            r = distance_matrix / localization_radius
+            r = distance_matrix / (0.5*localization_radius)
         else:
             if localization_radius.shape[0] == distance_matrix.shape[0]:
-                r = distance_matrix / localization_radius[:, None]
+                r = distance_matrix / 0.5*localization_radius[:, None]
+                # r = np.ones_like(distance_matrix)*localization_radius[:, None]
             elif localization_radius.shape[0] > distance_matrix.shape[0]:  
                 obs_indices = np.arange(distance_matrix.shape[0])  # Select only the required points
-                r = distance_matrix / localization_radius[obs_indices, None]
+                r = distance_matrix / 0.5*localization_radius[obs_indices, None]
+                # r = np.ones_like(distance_matrix)*localization_radius[obs_indices, None]
 
         # Normalize distances by the localization radius
         # r = distance_matrix / localization_radius
+        if False:
+            # create a localization matrix without distance
+            r = np.ones_like(distance_matrix)*localization_radius
 
         # Compute tapering matrix using Gaspari-Cohn function
         tapering_matrix = self.gaspari_cohn(r)
+        # print(f"tapering matrix: {tapering_matrix}")
 
         return tapering_matrix
 
@@ -563,5 +576,63 @@ class UtilsFunctions:
 
         return adaptive_radius
 
+    def compute_smb_mask(self,  k, km,  state_block_size, hu_obs=None, smb_init=None, smb_clim=None, model_kwargs=None):
+        """
+        Compute a robust SMB mask based on observations (if available) or ensemble statistics.
+        
+        Parameters:
+        - statevec_ens: np.array, current state ensemble
+        - state_block_size: int, starting index for SMB-related states
+        - hu_obs: np.array or None, observed SMB values (optional)
+        - smb_init: np.array, initial SMB state
+        - smb_clim: np.array or None, climatological SMB values (optional)
+        - model_kwargs: dict, model parameters containing time `t`
+        - params: dict, additional model parameters (e.g., `nt`)
 
-  
+        Returns:
+        - Updated `statevec_ens` with a robust SMB mask applied.
+        """
+        statevec_ens = self.ensemble
+        params = self.params
+
+        # Define the SMB state
+        smb = statevec_ens[state_block_size:, :]
+
+        # Time information
+        t = model_kwargs["t"]
+        nt = params["nt"]
+        time_factor = np.clip(t[k] / (t[nt - 1] - t[0]), 0, 1)  # Prevent division by zero
+
+        # If SMB observations exist, use them to set a dynamic threshold
+        # if hu_obs is not None:
+        if np.max(hu_obs[state_block_size:, km]) > 0:
+            smb_crit = np.percentile(hu_obs[state_block_size:, km], 95, axis=0) * 1.25
+        # elif smb_clim is not None:
+        elif np.max(smb_clim) > 0:
+            # If climatological data exists, use it as a reference
+            smb_crit = smb_clim + np.std(smb, axis=1)
+        else:
+            # Default to ensemble statistics if no observations or climatology
+            smb_mean = np.mean(smb, axis=1)
+            smb_std = np.std(smb, axis=1)
+            smb_crit = smb_mean + 2.0 * smb_std
+
+        # Compute lower and upper bounds
+        smb_crit_upper = smb_crit
+        smb_crit_lower = smb_crit * 0.8  # Allow some variability
+
+        # Logical mask for significant deviations
+        smb_flag = np.any((smb > smb_crit_upper) | (smb < smb_crit_lower), axis=1)
+
+        if np.any(smb_flag):  # If any deviations exist
+            alpha = 0.05  # Smoothing factor
+            correction_factor = (1 - np.exp(-alpha * time_factor))
+
+            # Apply smooth correction
+            statevec_ens[state_block_size:, :] = smb_init + (smb - smb_init) * correction_factor
+
+        return statevec_ens
+
+
+
+    

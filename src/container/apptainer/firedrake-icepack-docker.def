@@ -14,7 +14,9 @@ From: bkyanjo/icepack:latest
     # Install additional Python packages
     pip install siphash24
     pip install pyyaml
-
+    pip install bigmpi4py
+    pip install numexpr
+	
     # Create activate_venv.sh
     cat << 'EOF' > /opt/firedrake/activate_venv.sh
 #!/bin/sh

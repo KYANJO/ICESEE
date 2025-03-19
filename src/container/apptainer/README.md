@@ -87,8 +87,6 @@ After building the container, create a SLURM job script (e.g., `job.sh`) with th
 #SBATCH --mail-type=BEGIN,END,FAIL    # Email notifications
 #SBATCH --mail-user=gburdell3@gatech.edu  # Email address for notifications
 
-module load gcc/12 && module load mvapich2
-
 # Run the application using the container
 srun --mpi=pmi2 apptainer exec icepack.sif python3 test.py
 ```
