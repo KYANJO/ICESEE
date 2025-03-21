@@ -202,15 +202,31 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 print("Generating synthetic observations ...")
                 utils_funs = UtilsFunctions(params, ensemble_true_state)
                 model_kwargs.update({"statevec_true": ensemble_true_state})
-                hu_obs = utils_funs._create_synthetic_observations(**model_kwargs)
+                hu_obs, error_R = utils_funs._create_synthetic_observations(**model_kwargs)
+
+                # observe or don't observe parameters.
+                vecs, indx_map,_ = icesee_get_index(hu_obs, **model_kwargs)
+                # check if model_kwargs['observe_params'] is empty
+                if len(model_kwargs['observed_params']) == 0:
+                    for key in model_kwargs['params_vec']:
+                        hu_obs[indx_map[key],:] = 0.0 
+                        error_R[:,indx_map[key]] = 0.0
+                else: 
+                    for key in model_kwargs['params_vec']:
+                        if key not in model_kwargs['observed_params']:
+                            hu_obs[indx_map[key],:] = 0.0
+                            error_R[:,indx_map[key]] = 0.0
+
             else:
                 hu_obs = np.empty((params["nd"],params["number_obs_instants"]),dtype=np.float64)
+                error_R = np.empty((params["number_obs_instants"], params["nd"]),dtype=np.float64)
 
             if params["even_distribution"]:
                 # Bcast the observations
                 comm_world.Bcast(hu_obs, root=0)
             else:
                 hu_obs = comm_world.bcast(hu_obs, root=0)
+                error_R = comm_world.bcast(error_R, root=0)
                 # *--- write observations to file ---
                 # parallel_write_data_from_root_2D(full_ensemble=hu_obs, comm=comm_world, data_name='hu_obs', output_file="ensemble_data.h5")
         else:
@@ -224,17 +240,37 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 if sub_rank == 0:
                     utils_funs = UtilsFunctions(params, ensemble_true_state)
                     model_kwargs.update({"statevec_true": ensemble_true_state})
-                    hu_obs = utils_funs._create_synthetic_observations(**model_kwargs)
+                    hu_obs, error_R = utils_funs._create_synthetic_observations(**model_kwargs)
+
+                    # observe or don't observe parameters.
+                    vecs, indx_map,_ = icesee_get_index(hu_obs, **model_kwargs)
+                    # check if model_kwargs['observe_params'] is empty
+                    if len(model_kwargs['observed_params']) == 0:
+                        for key in model_kwargs['params_vec']:
+                            hu_obs[indx_map[key],:] = 0.0 
+                            error_R[:,indx_map[key]] = 0.0
+                    else: 
+                        for key in model_kwargs['params_vec']:
+                            if key not in model_kwargs['observed_params']:
+                                hu_obs[indx_map[key],:] = 0.0
+                                error_R[:,indx_map[key]] = 0.0
+
                     shape_ = np.array(hu_obs.shape,dtype=np.int32)
+                    shape_R = np.array(error_R.shape,dtype=np.int32)
                 else:
                     shape_ = np.empty(2,dtype=np.int32)
+                    shape_R = np.empty(2,dtype=np.int32)
 
                 subcomm.Bcast(shape_, root=0)
+                subcomm.Bcast(shape_R, root=0)
                 if sub_rank != 0:
                     hu_obs = np.empty(shape_,dtype=np.float64)
+                    error_R = np.empty(shape_R,dtype=np.float64)
+
 
                 # bcast the synthetic observations
                 subcomm.Bcast(hu_obs, root=0)
+                subcomm.Bcast(error_R, root=0)
                 #- write observations to file
                 # parallel_write_data_from_root_2D(full_ensemble=hu_obs, comm=subcomm, data_name='hu_obs', output_file="ensemble_data.h5")
 
@@ -261,18 +297,23 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 if rank_world == 0:
                     utils_funs = UtilsFunctions(params, ensemble_true_state)
                     model_kwargs.update({"statevec_true": ensemble_true_state})
-                    hu_obs = utils_funs._create_synthetic_observations(**model_kwargs)
+                    hu_obs, error_R = utils_funs._create_synthetic_observations(**model_kwargs)
                     shape_ = np.array(hu_obs.shape,dtype=np.int32)
+                    shape_R = np.array(error_R.shape,dtype=np.int32)
                 else:
                     shape_ = np.empty(2,dtype=np.int32)
+                    shape_R = np.empty(2,dtype=np.int32)
 
                 comm_world.Bcast(shape_, root=0)
+                comm_world.Bcast(shape_R, root=0)
 
                 if rank_world != 0:
                     hu_obs = np.empty(shape_,dtype=np.float64)
+                    error_R = np.empty(shape_R,dtype=np.float64)
 
                 # bcast the synthetic observations
                 comm_world.Bcast(hu_obs, root=0)
+                comm_world.Bcast(error_R, root=0)
                 
         # --- Initialize the ensemble ---------------------------------------------------
         comm_world.Barrier()
@@ -298,10 +339,21 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         hdim = ensemble_vec.shape[0] // params["total_state_param_vars"]
                     else:
                         hdim = ensemble_vec.shape[0] // params["num_state_vars"]
-                    state_block_size = hdim // params["num_state_vars"]
-                    Q_err = np.eye(state_block_size) * 0.1 ** 2
-                    noise = multivariate_normal.rvs(mean=np.zeros(state_block_size), cov=Q_err)
-                    ensemble_vec[:state_block_size,ens] = ensemble_vec[:state_block_size,ens] + noise[:state_block_size]
+                    state_block_size = hdim * params["num_state_vars"]
+                    full_block_size = hdim * params["total_state_param_vars"]
+                    Q_err = np.zeros((full_block_size,full_block_size))
+                    for i, sig in enumerate(params["sig_Q"]):
+                        start_idx = i *hdim
+                        end_idx = start_idx + hdim
+                        Q_err[start_idx:end_idx,start_idx:end_idx] = np.eye(hdim) * sig ** 2
+
+                    # noise = multivariate_normal.rvs(mean=np.zeros(state_block_size), cov=Q_err[:state_block_size,:state_block_size])
+                    noise = multivariate_normal.rvs(mean=np.zeros(full_block_size), cov=Q_err)
+                    ensemble_vec[:,ens] += noise
+
+                    # add a spread to the smb
+                    # if model_kwargs["joint_estimation"] or params["localization_flag"]:
+                        # ensemble_vec[state_block_size:,ens] = ensemble_vec[state_block_size:,ens] + np.diag(Q_err[state_block_size:,state_block_size:])
                     
                 shape_ens = np.array(ensemble_vec.shape,dtype=np.int32)
                 
@@ -362,13 +414,21 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             hdim = initial_data[key].shape[0] // params["total_state_param_vars"]
                         else:
                             hdim = initial_data[key].shape[0] // params["num_state_vars"]
-                        state_block_size = hdim // params["num_state_vars"]
-                        if key in state_keys:
+                        state_block_size = hdim*params["num_state_vars"]
+                        full_block_size = hdim*params["total_state_param_vars"]
+                        # if key in state_keys:
                             # noise = np.random.normal(0, 0.1, state_block_size)
                             # Q_err = np.eye(state_block_size) * params["sig_Q"] ** 2
-                            Q_err = np.eye(state_block_size) * 0.01 ** 2
-                            noise = multivariate_normal.rvs(mean=np.zeros(state_block_size), cov=Q_err)
-                            initial_data[key][:state_block_size] += noise[:state_block_size]
+                            # Q_err = np.eye(state_block_size) * 0.01 ** 2
+                        Q_err = np.zeros((full_block_size,full_block_size))
+                        for i, sig in enumerate(params["sig_Q"]):
+                            start_idx = i *hdim
+                            end_idx = start_idx + hdim
+                            Q_err[start_idx:end_idx,start_idx:end_idx] = np.eye(hdim) * sig ** 2
+
+                        noise = multivariate_normal.rvs(mean=np.zeros(state_block_size), cov=Q_err)
+                        # initial_data[key][:state_block_size] += noise[:state_block_size]
+                        initial_data[key] += noise
                         
                     # stack all variables together into a single array
                     stacked = np.hstack([initial_data[key] for key in initialilaized_state.keys()])
@@ -471,7 +531,14 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
     else:
         nd = hdim*params["total_state_param_vars"]
         # params["nd"] = nd
-        Q_err = np.diag(params["sig_Q"] ** 2)
+        # Q_err = np.diag(params["sig_Q"] ** 2)
+        Q_err = np.zeros((nd,nd))
+        for i, sig in enumerate(params["sig_Q"]):
+            start_idx = i *hdim
+            end_idx = start_idx + hdim
+            Q_err[start_idx:end_idx,start_idx:end_idx] = np.eye(hdim) * sig ** 2
+
+        Cov_obs = np.cov(error_R)
     
     # save the process noise to the model_kwargs dictionary
     model_kwargs.update({"Q_err": Q_err})
@@ -913,7 +980,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         #             gathered_D = comm_world.gather(D, root=0)
                         #             gathered_HA = comm_world.gather(HA, root=0)
                         #             if rank_world == 0:
-                        #                 Eta = np.hstack(gathered_Eta)
+                        #                 Eta = np.hstack(gatheEta)
                         #                 D = np.hstack(gathered_D)
                         #                 HA = np.hstack(gathered_HA)
                         #             else:
@@ -929,17 +996,28 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
                         # comm_world.Barrier()
                         if rank_world == 0:
+
+                            ndim = ensemble_vec.shape[0] // params["total_state_param_vars"]
+                            state_block_size = ndim*params["num_state_vars"]
+                            # ensemble_vec[state_block_size:,:] *= 10
+                            # hu_obs[state_block_size:,:] *= 10
+
                             # -------------
-                            H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0]) #TODO: maybe it should be Obs_fun instead of JObs_fun???
-                            h = UtilsFunctions(params, ensemble_vec).Obs_fun # observation operator
+                            # H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0]) 
+                            # h = UtilsFunctions(params, ensemble_vec).Obs_fun # observation operator
 
                             # compute the observation covariance matrix
-                            Cov_obs = params["sig_obs"][k+1]**2 * np.eye(2*params["number_obs_instants"]+1)
+                            # Cov_obs = params["sig_obs"][k+1]**2 * np.eye(2*params["number_obs_instants"]+1)
+                            # Cov_obs = error_R[:,k+1]**2 * np.eye(2*params["number_obs_instants"]+1)
 
                             # --- vector of measurements
                             # print(f"hu_obs shape: {hu_obs.shape}")
                             d = UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km])
                             #  -------------
+
+                            # --- get the ensmble pertubations
+
+                            
 
                             # get parameter
                             # parameter_estimated = ensemble_vec[state_block_size:,:]
@@ -949,7 +1027,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
                             if EnKF_flag:
                                 # compute the X5 matrix
-                                X5,analysis_vec_ij = EnKF_X5(k,ensemble_vec, Cov_obs, Nens, h, d, model_kwargs)
+                                X5,analysis_vec_ij = EnKF_X5(k,ensemble_vec, Cov_obs, Nens, d, model_kwargs,UtilsFunctions)
                                 # X5 = EnKF_X5(Cov_obs, Nens, D, HA, Eta, d)
                                 y_i = np.sum(X5, axis=1)
                                 # ensemble_vec_mean[:,k+1] = (1/Nens)*(ensemble_vec @ y_i.reshape(-1,1)).ravel()
@@ -968,7 +1046,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                     
                         # update the observation index
                         km += 1
-
+                        # hu_obs[state_block_size:,:] /= 20
                         # inflate the ensemble #TODO: udate before gather: Done
                         # ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
 

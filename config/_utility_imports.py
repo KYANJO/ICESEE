@@ -133,9 +133,6 @@ if not flag_jupyter:
         "num_param_vars": int(float(enkf_params.get("num_param_vars", 0))),
         "number_obs_instants": int(int(float(enkf_params.get("obs_max_time", 1))) / float(enkf_params.get("freq_obs", 1))),
         "inflation_factor": float(enkf_params.get("inflation_factor", 1.0)),
-        "sig_model": float(enkf_params.get("sig_model", 0.01)),
-        "sig_obs": float(enkf_params.get("sig_obs", 0.01)),
-        "sig_Q": float(enkf_params.get("sig_Q", 0.01)),
         "freq_obs": float(enkf_params.get("freq_obs", 1)),
         "obs_max_time": int(float(enkf_params.get("obs_max_time", 1))),
         "obs_start_time": float(enkf_params.get("obs_start_time", 1)),
@@ -180,7 +177,8 @@ if not flag_jupyter:
         "state_estimation": bool(enkf_params.get("state_estimation", False)),
         "vec_inputs": enkf_params['vec_inputs'],
         "global_analysis": bool(enkf_params.get("global_analysis", True)),
-        "local_analysis": bool(enkf_params.get("local_analysis", False))
+        "local_analysis": bool(enkf_params.get("local_analysis", False)),
+        "observed_params":enkf_params.get("observed_params", []),
     }
 
     if kwargs["joint_estimation"]:
@@ -188,6 +186,13 @@ if not flag_jupyter:
     else:
         params["total_state_param_vars"] = params["num_state_vars"]
     # params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
+
+    # unpack standard deviations
+    params.update({
+        "sig_model": enkf_params.get("sig_model", np.array([0.01])*params["total_state_param_vars"]),
+        "sig_obs": enkf_params.get("sig_obs", np.array([0.01])*params["total_state_param_vars"]),
+        "sig_Q": enkf_params.get("sig_Q", np.array([0.01])*params["total_state_param_vars"]),
+        })
 
     # --- Observations Parameters ---
     obs_t, obs_idx, num_observations = UtilsFunctions(params).generate_observation_schedule(**kwargs)
@@ -197,4 +202,10 @@ if not flag_jupyter:
     kwargs["parallel_flag"]       = enkf_params.get("parallel_flag", "serial")
     kwargs["commandlinerun"]      = enkf_params.get("commandlinerun", False)
 
- 
+    #  check available parameters in the obseve_params list that need to be observed 
+    params_vec = []
+    for i, vars in enumerate(kwargs["vec_inputs"]):
+        if i >= params["num_state_vars"]:
+            params_vec.append(vars)
+
+    kwargs["params_vec"] = params_vec

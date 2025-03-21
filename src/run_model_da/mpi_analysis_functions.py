@@ -194,9 +194,66 @@ def parallel_write_full_ensemble_from_root(timestep, ensemble_mean, params,full_
                 ens_mean[:,timestep] = ensemble_mean
     comm.Barrier()
 
+def get_grid_dimensions(nx, ny, ndim):
+    """
+    Calculate grid dimensions mx and my based on physical dimensions and total points.
+    
+    Parameters:
+    nx (int): Number of elements in x-direction
+    ny (int): Number of elements in y-direction
+    ndim (int): Total number of grid points (mx * my)
+    
+    Returns:
+    tuple: (mx, my) - number of grid points in x and y directions
+    """
+    # Calculate aspect ratio from physical dimensions
+    alpha = nx / ny
+    
+    # Initial estimate based on aspect ratio and ndim
+    # mx/my = alpha and mx*my = ndim
+    # mx = sqrt(ndim * alpha), my = sqrt(ndim / alpha)
+    mx = np.sqrt(ndim * alpha)
+    my = np.sqrt(ndim / alpha)
+    
+    # Initial rounding
+    if mx - int(mx) > 0.5:
+        mx = int(np.ceil(mx))
+        my = int(np.floor(my))
+    elif my - int(my) > 0.5:
+        my = int(np.ceil(my))
+        mx = int(np.floor(mx))
+    else:
+        mx, my = int(mx), int(my)
+    
+    # Quick adjustment to reach ndim
+    current_product = mx * my
+    if current_product != ndim:
+        # Calculate scale factor
+        scale = np.sqrt(ndim / current_product)
+        mx = int(round(mx * scale))
+        my = int(round(my * scale))
+        
+        # Fast fine-tuning with minimal iterations
+        product = mx * my
+        if product < ndim:
+            while product < ndim:
+                if mx/my < alpha:
+                    mx += 1
+                else:
+                    my += 1
+                product = mx * my
+        elif product > ndim:
+            while product > ndim:
+                if mx/my > alpha:
+                    mx -= 1
+                else:
+                    my -= 1
+                product = mx * my
+    
+    return mx, my
 # ============================ EnKF functions ============================ 
 # def EnKF_X5(Cov_obs, Nens, D, HA, Eta, d): 
-def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, h, d, model_kwargs):
+def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, d, model_kwargs,UtilsFunctions):
     """
     Function to compute the X5 matrix for the EnKF
         - ensemble_vec: ensemble matrix of size (ndxNens)
@@ -206,6 +263,7 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, h, d, model_kwargs):
     """
     params = model_kwargs.get("params")
     comm_world = model_kwargs.get("comm_world")
+    H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0])
 
     # ----parallelize this step
     Eta = np.zeros((d.shape[0], Nens)) # mxNens, ensemble pertubations
@@ -214,7 +272,7 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, h, d, model_kwargs):
     for ens in range(Nens):
         Eta[:,ens] = np.random.multivariate_normal(mean=np.zeros(d.shape[0]), cov=Cov_obs) 
         D[:,ens] = d + Eta[:,ens]
-        HA[:,ens] = h(ensemble_vec[:,ens])
+        HA[:,ens] = np.dot(H, ensemble_vec[:,ens])
     # ---------------------------------------
 
     # --- compute the innovations D` = D-HA
@@ -284,24 +342,43 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, h, d, model_kwargs):
 
     # ===local computation
     if model_kwargs.get("local_analysis",False):
+        nx, ny = model_kwargs.get("nx"), model_kwargs.get("ny")
+        from scipy.spatial import distance
         # for each grid point
+        h = UtilsFunctions(params, ensemble_vec).Obs_fun 
+        # d = UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km])
         analysis_vec_ij = np.empty_like(ensemble_vec)
         dim = ensemble_vec.shape[0]//params["total_state_param_vars"]
+        mx, my = get_grid_dimensions(nx, ny, dim)
+        yg, xg = np.unravel_index(np.arange(dim), (my, mx))
+        lscale = 20
         for ij in range(dim):
+            # reference point xg[ij], yg[ij]
+            # dist = np.sqrt((xg[ij] - xg)**2 + (yg[ij] - yg)**2)
+            dist = distance.cdist(np.array([[xg[ij], yg[ij]]]), np.column_stack((xg, yg)))[0]
+            # nearest_indices = np.argsort(dist)[:lscale]
+            nearest_indices = dist < np.abs(lscale)
+            # ensemble_vec_ij = ensemble_vec[nearest_indices,:]
+
             Eta_local = np.zeros(Nens)
             D_local   = np.zeros_like(Eta_local)
             HA_local  = np.zeros_like(D_local)
             for ens in range(Nens):
                 for var in range(params["total_state_param_vars"]):
                     idx = var*dim + ij
-                    d_loc = d[idx]
-                    Cov_obs_loc = Cov_obs[idx,idx]
-                    mean = np.zeros(1)
+                    # nearrest observations indices 
+                    idx_obs_loc = var*dim + nearest_indices
+                    print(f"nearest_indices: {nearest_indices} idx_obs_loc: {idx_obs_loc}")
+                    # d_loc = d[idx]
+                    d_loc = d[idx_obs_loc]
+                    # Cov_obs_loc = Cov_obs[idx,idx]
+                    Cov_obs_loc = Cov_obs[idx_obs_loc,idx_obs_loc]
+                    # mean = np.zeros(1)
                     # Eta_local[ens] = np.random.multivariate_normal(mean, cov=Cov_obs_loc)
                     Eta_local[ens] = np.random.normal(0, np.sqrt(Cov_obs_loc))
                     D_local[ens] = d_loc + Eta_local[ens]
-                    print(len(ensemble_vec[idx,ens]))
-                    HA_local[ens] = h(ensemble_vec[idx,ens])
+                    # HA_local[ens] = h(ensemble_vec[idx,ens])
+                    HA_local[ens] = UtilsFunctions(params, ensemble_vec[idx_obs_loc,ens]).Obs_fun(ensemble_vec[idx_obs_loc,ens])
 
             Dprime_local = D_local - HA_local
             HAbar_local = np.mean(HA_local)
@@ -336,7 +413,8 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, h, d, model_kwargs):
 
             # compute analysis vector
             for var in range(params["total_state_param_vars"]):
-                idx = var*dim + ij
+                # idx = var*dim + ij
+                idx = var*dim + nearest_indices
                 analysis_vec_ij[ij,:] = np.dot(ensemble_vec[idx,:], X5) + np.dot(ensemble_vec[idx,:], X5_diff)
         
     else:
@@ -389,6 +467,9 @@ def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij
         # do the ensemble analysis update: A_j = Fj*X5 
         analysis_vec = np.dot(scatter_ensemble, X5)
 
+        ndim = analysis_vec.shape[0] // params["total_state_param_vars"]
+        state_block_size = ndim*params["num_state_vars"]
+        # analysis_vec[state_block_size:,:] /= 10
         analysis_vec = UtilsFunctions(params,  analysis_vec).inflate_ensemble(in_place=True)
 
         # gather from all processors

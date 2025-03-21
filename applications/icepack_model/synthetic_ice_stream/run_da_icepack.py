@@ -55,13 +55,6 @@ kwargs.update({"a":a, "h0":h0, "u0":u0, "C":C, "A":A,"Q":Q,"V":V, "da":float(mod
         "a_p":a_p, "b_in":b_in, "b_out":b_out,
 })
 
-# --- observations parameters ---
-sig_obs = np.zeros(params["nt"]+1)
-for i in range(len(kwargs["obs_index"])):
-    sig_obs[kwargs["obs_index"][i]] = params["sig_obs"]
-params["sig_obs"] = sig_obs
-
-
 # --- Run Data Assimilation ---
 kwargs.update({"params": params}) # update the kwargs with the parameters
 

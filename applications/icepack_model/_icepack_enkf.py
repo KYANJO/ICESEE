@@ -249,36 +249,42 @@ def generate_nurged_state(**kwargs):
     #  create a bump -100 to 0
     # h_indx = int(np.ceil(nurged_entries+1))
     hdim = vecs['h'].shape[0]
-    h_indx = int(np.ceil(nurged_entries_percentage*hdim+1))
-    # if 0.5*hdim > int(np.ceil(nurged_entries+1)):
-    #     nurged_entries = nurged_entries_percentage*hdim
-    #     h_indx = int(np.ceil(nurged_entries+1))
-    # else:
-    #     # 5% of the hdim so that the bump is not too large
-    #     h_indx = int(np.ceil(hdim*0.025))
-    #     # h_indx = int(np.ceil(0.05*nurged_entries+1))
-   
-    # u_indx = int(np.ceil(u_nurge_ic+1))
-    u_indx = 1
-    h_bump = np.linspace(-h_nurge_ic,0,h_indx)
-    u_bump = np.linspace(-u_nurge_ic,0,h_indx)
-    # h_bump = np.random.uniform(-h_nurge_ic,0,h_indx)
-    # u_bump = np.random.uniform(-u_nurge_ic,0,h_indx)
-    # print(f"hdim: {hdim}, h_indx: {h_indx}")
-    # print(f"[Debug]: h_bump shape: {h_bump.shape} h0_index: {h0.dat.data_ro[:h_indx].shape}")
-    h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
-    u_with_bump = u_bump + u0.dat.data_ro[:h_indx,0]
-    v_with_bump = u_bump + u0.dat.data_ro[:h_indx,1]
 
-    h_perturbed_0 = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
-    u_perturbed = np.concatenate((u_with_bump, u0.dat.data_ro[h_indx:,0]))
-    v_perturbed = np.concatenate((v_with_bump, u0.dat.data_ro[h_indx:,1]))
+     # intialize the accumulation rate if joint estimation is enabled at the initial time step
+    if kwargs["joint_estimation"]:
+        tnur = np.linspace(.1, 2, nt)
+        # aa   = a_in_p*(np.sin(tnur[0]) + 1)
+        # daa  = da_p*(np.sin(tnur[0]) + 1)
+        aa = a_in_p
+        daa = da_p
+        a_in = firedrake.Constant(aa)
+        da_  = firedrake.Constant(daa)
+        a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
+        statevec_nurged[indx_map["smb"],0] = a.dat.data_ro
 
     # if velocity is nurged, then run to get a solution to be used as am initial guess for velocity.
-    if u_nurge_ic != 0.0:
+    if u_nurge_ic != 0.0 or h_nurge_ic != 0.0:
+        h_indx = int(np.ceil(nurged_entries_percentage*hdim+1))
+   
+        # u_indx = int(np.ceil(u_nurge_ic+1))
+        u_indx = 1
+        h_bump = np.linspace(-h_nurge_ic,0,h_indx)
+        u_bump = np.linspace(-u_nurge_ic,0,h_indx)
+        # h_bump = np.random.uniform(-h_nurge_ic,0,h_indx)
+        # u_bump = np.random.uniform(-u_nurge_ic,0,h_indx)
+        # print(f"hdim: {hdim}, h_indx: {h_indx}")
+        # print(f"[Debug]: h_bump shape: {h_bump.shape} h0_index: {h0.dat.data_ro[:h_indx].shape}")
+        h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
+        u_with_bump = u_bump + u0.dat.data_ro[:h_indx,0]
+        v_with_bump = u_bump + u0.dat.data_ro[:h_indx,1]
+
+        h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
+        u_perturbed = np.concatenate((u_with_bump, u0.dat.data_ro[h_indx:,0]))
+        v_perturbed = np.concatenate((v_with_bump, u0.dat.data_ro[h_indx:,1]))
+
         h = Function(Q)
         u = Function(V)
-        h.dat.data[:]   = h_perturbed_0
+        h.dat.data[:]   = h_perturbed
         u.dat.data[:,0] = u_perturbed
         u.dat.data[:,1] = v_perturbed
         h0 = h.copy(deepcopy=True)
@@ -289,38 +295,27 @@ def generate_nurged_state(**kwargs):
         h_perturbed = h.dat.data_ro
         u_perturbed = u.dat.data_ro[:,0]
         v_perturbed = u.dat.data_ro[:,1]
+    else: 
+        h_perturbed = h0.dat.data_ro + np.random.normal(0, 0.1, h0.dat.data_ro.size)
+        u_perturbed = u0.dat.data_ro[:,0]
+        v_perturbed = u0.dat.data_ro[:,1]
 
-    statevec_nurged[indx_map["h"],0]   = h_perturbed_0
+    statevec_nurged[indx_map["h"],0]   = h_perturbed
     statevec_nurged[indx_map["u"],0]   = u_perturbed
     statevec_nurged[indx_map["v"],0]   = v_perturbed
 
     h = Function(Q)
     u = Function(V)
-    h.dat.data[:] = h_perturbed_0
+    h.dat.data[:] = h_perturbed
     u.dat.data[:,0] = u_perturbed
     u.dat.data[:,1] = v_perturbed
-    h0 = h.copy(deepcopy=True)
-
-    tnur = np.linspace(.1, 2, nt)
-    # intialize the accumulation rate if joint estimation is enabled at the initial time step
-    if kwargs["joint_estimation"]:
-        # aa   = a_in_p*(np.sin(tnur[0]) + 1)
-        # daa  = da_p*(np.sin(tnur[0]) + 1)
-        aa = a_in_p
-        daa = da_p
-        a_in = firedrake.Constant(aa)
-        da_  = firedrake.Constant(daa)
-        a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
-        statevec_nurged[indx_map["smb"],0] = a.dat.data_ro
+    h0 = h0.copy(deepcopy=True)
+    
 
     for k in range(params['nt']):
         # aa   = a_in_p*(np.sin(tnur[k]) + 1)
         # daa  = da_p*(np.sin(tnur[k]) + 1)
-        aa = a_in_p
-        daa = da_p
-        a_in = firedrake.Constant(aa)
-        da_  = firedrake.Constant(daa)
-        a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
+        
         # call the ice stream model to update the state variables
         h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
 
@@ -329,6 +324,11 @@ def generate_nurged_state(**kwargs):
         statevec_nurged[indx_map["v"],k+1] = u.dat.data_ro[:,1]
 
         if kwargs["joint_estimation"]:
+            # aa = a_in_p
+            # daa = da_p
+            a_in = firedrake.Constant(aa)
+            da_  = firedrake.Constant(daa)
+            a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
             statevec_nurged[indx_map["smb"],k+1] = a.dat.data_ro
 
     return statevec_nurged
@@ -358,23 +358,76 @@ def initialize_ensemble(ens, **kwargs):
     u_nurge_ic      = kwargs.get('u_nurge_ic', None)
     nurged_entries_percentage  = kwargs.get('nurged_entries_percentage', None)
     statevec_ens    = kwargs["statevec_ens"]
+    x = kwargs.get('x', None)
+    Lx = kwargs.get('Lx', None)
 
 
     # initialize the ensemble members
     # hdim = vecs['h'].shape[0]
     hdim = h0.dat.data_ro.size
-    h_indx = int(np.ceil(nurged_entries_percentage*hdim+1))
+    # h_indx = int(np.ceil(nurged_entries_percentage*hdim+1))
 
-    # create a bump -100 to 0
-    h_bump = np.linspace(-h_nurge_ic,0,h_indx)
-    h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
-    h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
+    # # # create a bump -100 to 0
+    # h_bump = np.linspace(-h_nurge_ic,0,h_indx)
+    # h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
+    # h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
     # statevec_ens[:hdim,ens] = h_perturbed 
     # h_perturbed = h0.dat.data_ro
 
+     # intialize the accumulation rate if joint estimation is enabled at the initial time step
+    if kwargs["joint_estimation"]:
+        tnur = np.linspace(.1, 2, 5)
+        # aa   = a_in_p*(np.sin(tnur[0]) + 1)
+        # daa  = da_p*(np.sin(tnur[0]) + 1)
+        aa = a_in_p
+        daa = da_p
+        a_in = firedrake.Constant(aa)
+        da_  = firedrake.Constant(daa)
+        a    = firedrake.interpolate(a_in + da_ * x / Lx, Q)
+    else:
+        a = kwargs.get('a', None)
+        # statevec_nurged[indx_map["smb"],0] = a.dat.data_ro
+
+    if u_nurge_ic != 0 or h_nurge_ic != 0:
+        h_indx = int(np.ceil(nurged_entries_percentage*hdim+1))
+   
+        # u_indx = int(np.ceil(u_nurge_ic+1))
+        u_indx = 1
+        h_bump = np.linspace(-h_nurge_ic,0,h_indx)
+        u_bump = np.linspace(-u_nurge_ic,0,h_indx)
+        # h_bump = np.random.uniform(-h_nurge_ic,0,h_indx)
+        # u_bump = np.random.uniform(-u_nurge_ic,0,h_indx)
+        # print(f"hdim: {hdim}, h_indx: {h_indx}")
+        # print(f"[Debug]: h_bump shape: {h_bump.shape} h0_index: {h0.dat.data_ro[:h_indx].shape}")
+        h_with_bump = h_bump + h0.dat.data_ro[:h_indx]
+        u_with_bump = u_bump + u0.dat.data_ro[:h_indx,0]
+        v_with_bump = u_bump + u0.dat.data_ro[:h_indx,1]
+
+        h_perturbed = np.concatenate((h_with_bump, h0.dat.data_ro[h_indx:]))
+        u_perturbed = np.concatenate((u_with_bump, u0.dat.data_ro[h_indx:,0]))
+        v_perturbed = np.concatenate((v_with_bump, u0.dat.data_ro[h_indx:,1]))
+
+        h = Function(Q)
+        u = Function(V)
+        h.dat.data[:]   = h_perturbed
+        u.dat.data[:,0] = u_perturbed
+        u.dat.data[:,1] = v_perturbed
+        h0 = h.copy(deepcopy=True)
+        # call the solver
+        h, u = Icepack(solver, h, u, a, b, dt, h0, fluidity = A, friction = C)
+
+        # update the nurged state with the solution
+        h_perturbed = h.dat.data_ro
+        u_perturbed = u0.dat.data_ro[:,0]
+        v_perturbed = u0.dat.data_ro[:,1]
+    else: 
+        h_perturbed = h0.dat.data_ro + np.random.normal(0, 0.1, h0.dat.data_ro.size)
+        u_perturbed = u0.dat.data_ro[:,0]
+        v_perturbed = u0.dat.data_ro[:,1]
+
     initialized_state = {'h': h_perturbed, 
-                         'u': u0.dat.data_ro[:,0], 
-                         'v': u0.dat.data_ro[:,1]}
+                         'u': u.dat.data_ro[:,0], 
+                         'v': u.dat.data_ro[:,1]}
     
     # -- for joint estimation --
     if kwargs["joint_estimation"]:
@@ -382,6 +435,7 @@ def initialize_ensemble(ens, **kwargs):
         da_  = firedrake.Constant(da_p)
         a   = firedrake.interpolate(a_in + da_ * kwargs["x"] / kwargs["Lx"], Q)
         initialized_state['smb'] = a.dat.data_ro + np.random.normal(0, 0.01, a.dat.data_ro.size)
+        # initialized_state['smb'] = a.dat.data_ro
        
     return initialized_state
 

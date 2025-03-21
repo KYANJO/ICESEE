@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from scipy.stats import norm
 from scipy.interpolate import interp1d
 from scipy.spatial.distance import cdist
+from tools import icesee_get_index
 
 
 # --- helper functions ---
@@ -49,7 +50,6 @@ class UtilsFunctions:
         H[self.params["number_obs_instants"] * 2, n - 2] = 1  # Final element
 
         return H
-        
 
     def Obs_fun(self, virtual_obs):
         """
@@ -64,7 +64,7 @@ class UtilsFunctions:
         """
         # check if virtual_obs is a scalar
         if np.isscalar(virtual_obs):
-            n = len(virtual_obs)
+            n = 1
         else:
             n = virtual_obs.shape[0]
 
@@ -126,22 +126,37 @@ class UtilsFunctions:
 
         obs_t, ind_m, m_obs = self.generate_observation_schedule(**kwargs)
 
+        vecs, indx_map, _ = icesee_get_index(statevec_true, **kwargs)
+
         # create synthetic observations
         hu_obs = np.zeros((nd,self.params["number_obs_instants"]))
 
         # check if params["sig_obs"] is a scalar
-        if isinstance(self.params["sig_obs"], (int, float)):
-            self.params["sig_obs"] = np.ones(self.params["nt"]+1) * self.params["sig_obs"]
+        # if isinstance(self.params["sig_obs"], (int, float)):
+        #     self.params["sig_obs"] = np.ones(self.params["nt"]+1) * self.params["sig_obs"]
+        if kwargs.get('joint_estimation', False) or self.params.get('localization_flag', False):
+            hdim = statevec_true.shape[0] // self.params["total_state_param_vars"]
+        else:
+            hdim = statevec_true.shape[0] // self.params["total_state_param_vars"]
+
+        error_R = np.zeros((nd, m_obs * 2 + 1))
+        for i, sig in enumerate(self.params["sig_obs"]):
+            start_idx = i*hdim
+            end_idx = start_idx + hdim
+            error_R[start_idx:end_idx,:] = np.ones((hdim,1)) * sig
 
         km = 0
         for step in range(nt):
             if (km<m_obs) and (step+1 == ind_m[km]):
                 # hu_obs[:,km] = statevec_true[:,step+1] + norm(loc=0,scale=self.params["sig_obs"][step+1]).rvs(size=nd)
-                hu_obs[:,km] = statevec_true[:,step+1] + np.random.normal(0,self.params["sig_obs"][step+1],nd)
-            
+                # hu_obs[:,km] = statevec_true[:,step+1] + np.random.normal(0,self.params["sig_obs"][step+1],nd)
+                # TODO: start from here tomorrow.
+                for key in kwargs['vec_inputs']:
+                    hu_obs[indx_map[key],km] = statevec_true[indx_map[key],step+1] + np.random.normal(0,error_R[indx_map[key],km],len(indx_map[key]))
+
                 km += 1
 
-        return hu_obs
+        return hu_obs, error_R.T
     
     def bed(self, x):
         """
