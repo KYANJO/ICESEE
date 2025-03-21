@@ -263,7 +263,10 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, d, model_kwargs,UtilsFunctions):
     """
     params = model_kwargs.get("params")
     comm_world = model_kwargs.get("comm_world")
-    H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0])
+    H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0]) # mxNens, observation operator
+
+    # -- get ensemble pertubations
+    
 
     # ----parallelize this step
     Eta = np.zeros((d.shape[0], Nens)) # mxNens, ensemble pertubations
