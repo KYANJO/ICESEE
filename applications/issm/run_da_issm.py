@@ -8,8 +8,11 @@
 # --- Imports ---
 import sys
 import os
+import shutil
 import subprocess   
 import numpy as np
+import scipy.io as sio
+import h5py
 
 # --- Configuration ---
 sys.path.insert(0, '../../config')
@@ -21,9 +24,15 @@ from run_models_da import icesee_model_data_assimilation
 from parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
 icesee_rank, icesee_size, icesee_comm = ParallelManager().icesee_mpi_init(params)
 
-kwargs.update({
-               'example_name': modeling_params.get('example_name')
-})
+model_kwargs = {
+               'example_name': modeling_params.get('example_name'),
+               'Lx': int(float(physical_params.get('Lx'))), 'Ly': int(float(physical_params.get('Ly'))),
+                'nx': int(float(physical_params.get('nx'))), 'ny': int(float(physical_params.get('ny'))),
+                'ParamFile': modeling_params.get('ParamFile'),
+}
+
+# --- update Icesee kwargs with model kwargs ---
+kwargs.update(model_kwargs)
 
 # --- get current working directory ---
 icesee_cwd = os.getcwd()
@@ -49,13 +58,34 @@ issm_examples_dir = os.path.join(issm_dir, 'examples',kwargs.get('example_name')
 os.chdir(issm_examples_dir)
 print(f"[DEBUG] current working directory: {os.getcwd()}")
 
+# # save model kwargs to a .mat file
+sio.savemat('model_kwargs.mat', model_kwargs)
+
 # call the run me file to run the model: ISSM uses runme.m to run the model
 nprocs = icesee_size
-issm_run_cmd = f'matlab -nodisplay -nosplash -nodesktop -r "run(\'runme({nprocs})\'); exit"'
-subprocess.run(issm_run_cmd, shell=True, check=True)
+
+# copy the issm_env.m from icesee_cwd  file to the examples directory
+shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'issm_env.m'), issm_examples_dir)
+
+issm_cmd = (
+    f'matlab -nodisplay -nosplash -nodesktop '
+    f'-r "run(\'issm_env\'); runme({nprocs}); exit"'
+)
+
+subprocess.run(issm_cmd, shell=True, check=True)
+
+# -- mimic a forecast run
+# Nens = 4
+# for ens in range(Nens):
+#     print(f"Ensemble member: {ens}")
+#     subprocess.run(issm_cmd, shell=True, check=True)
+    # --- Run the ISSM model with data assimilation ---
 
 
 #   save the output to a file
+
+# remove the issm_env.m file from the examples directory
+os.remove(os.path.join(issm_examples_dir, 'issm_env.m'))
 
 # go back to the original directory
 os.chdir(icesee_cwd)

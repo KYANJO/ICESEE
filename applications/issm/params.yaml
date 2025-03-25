@@ -1,9 +1,9 @@
 physical-parameters:
   # Domain parameters
-  Lx: 50e2        # (m)
-  Ly: 12e2        # (m)
-  nx: 12         # number of elements in the x-direction
-  ny: 8        # number of elements in the y-direction
+  Lx: 80e3        # (m)
+  Ly: 80e3        # (m)
+  nx: 20         # number of elements in the x-direction
+  ny: 20         # number of elements in the y-direction
 
   
 modeling-parameters:
@@ -17,6 +17,7 @@ modeling-parameters:
   timesteps_per_year: 2   # number of timesteps per year
 
   example_name: "ISMIP"  # these can be found in the examples folder
+  ParamFile: "IsmipA.par"
 
 enkf-parameters:
   # Ensemble Kalman Filter parameters
