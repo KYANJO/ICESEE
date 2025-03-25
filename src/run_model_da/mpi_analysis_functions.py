@@ -12,7 +12,7 @@ import copy
 import h5py
 import numpy as np
 import bigmpi4py as BM
-from scipy.stats import multivariate_normal
+from scipy.stats import multivariate_normal, beta
 
 # seed the random number generator
 np.random.seed(0)
@@ -68,7 +68,43 @@ def parallel_write_ensemble_scattered(timestep, ensemble_mean, params, ensemble_
     else:
         with h5py.File(output_file, 'a', driver='mpio', comm=comm) as f:
             dset = f['ensemble']
+            # dset[offset:offset + local_nd, :,timestep] = ensemble_chunk
+
+            # =================
+            ndim = ensemble_chunk.shape[0] // params["total_state_param_vars"]
+            state_block_size = ndim*params["num_state_vars"]
+            param_size = ensemble_chunk.shape[0] - state_block_size
+            alpha = np.ones(param_size)*2.0
+            beta_param = alpha
+            def compute_f_params(alpha, beta_param):
+                mean_x = alpha/(alpha+beta_param)
+                a = 1.0
+                b = -a*mean_x
+                return a,b
+
+            def update_theta(alpha, beta_param):
+                # theta_f_t = np.zeros_like(theta_prev)
+                f_x_ti = np.zeros((param_size,ensemble_chunk.shape[1]))
+                for i in range(ensemble_chunk.shape[1]):
+                    a,b = compute_f_params(alpha[i], beta_param[i])
+                    x_ti = beta.rvs(alpha[i], beta_param[i])
+                    
+                    f_x_ti[:,i] = a*x_ti + b
+
+                    # theta_f_t[:,i] = theta_prev[:,i] + f_x_ti
+                # return theta_f_t
+                return f_x_ti
+            
+            # Update ensemble_chunk before writing
+            if state_block_size < ensemble_chunk.shape[0]:
+                prev_data = dset[offset:offset + local_nd, :, timestep-1]
+                ensemble_chunk[state_block_size:,:] = prev_data[state_block_size:,:] + update_theta(alpha, beta_param)
+
+            # ensemble_chunk[state_block_size:,:] =  dset[offset:offset + local_nd, :,timestep-1] + update_theta(alpha, beta_param)
             dset[offset:offset + local_nd, :,timestep] = ensemble_chunk
+
+
+            # ================
 
             if rank == 0:
                 ens_mean = f['ensemble_mean']
@@ -474,7 +510,8 @@ def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij
         ndim = analysis_vec.shape[0] // params["total_state_param_vars"]
         state_block_size = ndim*params["num_state_vars"]
         # analysis_vec[state_block_size:,:] /= 10
-        analysis_vec[state_block_size:,:] *= (smb_scale)  # Scale SMB after analysis
+        # analysis_vec[state_block_size:,:] *= (smb_scale)  # Scale SMB after analysis
+        # params['inflation_factor'] = 1.4
         analysis_vec[state_block_size:,:] = UtilsFunctions(params,  analysis_vec[state_block_size:,:]).inflate_ensemble(in_place=True)
 
         # check for negative thicknes and set to 1e-3 if vec_input contains h
@@ -484,6 +521,46 @@ def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij
                 end = start + ndim
                 analysis_vec[start:end, :] = np.maximum(analysis_vec[start:end, :], 1e-2)
 
+        # dynamical model for parameters: from https://doi.org/10.1002/qj.3257
+        # obs_index = model_kwargs.get("obs_index")
+        # # #  check if k equals to the first observation index
+        # # print(f"Rank: {rank_world} km: {km} obs_index: {obs_index}")
+        # if  (k+1 == obs_index[0]):
+        # #     print(f"[Debug] Rank: {rank_world} k: {km} obs_index: {obs_index}")
+        #     params_analysis_0 = analysis_vec[state_block_size:, :]
+        
+        # # size of parameters
+        # param_size = analysis_vec.shape[0] - state_block_size
+        # alpha = np.ones(param_size)*2.0
+        # beta_param = alpha
+        # def compute_f_params(alpha, beta_param):
+        #     mean_x = alpha/(alpha+beta_param)
+        #     a = 1.0
+        #     b = -a*mean_x
+        #     return a,b
+        
+        # def update_theta(alpha, beta_param):
+        #     # theta_f_t = np.zeros_like(theta_prev)
+        #     f_x_ti = np.zeros((param_size,analysis_vec.shape[1]))
+        #     for i in range(analysis_vec.shape[1]):
+        #         a,b = compute_f_params(alpha[i], beta_param[i])
+        #         x_ti = beta.rvs(alpha[i], beta_param[i])
+                
+        #         f_x_ti[:,i] = a*x_ti + b
+
+        #         # theta_f_t[:,i] = theta_prev[:,i] + f_x_ti
+        #     # return theta_f_t
+        #     return f_x_ti
+        
+        # analysis_vec[state_block_size:,:] = params_analysis_0 +  update_theta(alpha, beta_param) 
+
+        # # X = beta.rvs(alpha, beta_param,param_size)
+        # # linear_bijective_function = lambda x,a: 2*a*(x - 0.5) #zero mean  
+        # # analysis_vec[state_block_size:,:] = params_analysis_0 + linear_bijective_function(X,a=0.1)
+        
+        # params_analysis_0 = analysis_vec[state_block_size:, :]
+        
+
         # gather from all processors
         # ensemble_vec = BM.allgather(analysis_vec, comm_world)
         parallel_write_ensemble_scattered(k+1,ens_mean, params,analysis_vec, comm_world)
@@ -491,7 +568,6 @@ def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij
         # clean the memory
         del scatter_ensemble, analysis_vec; gc.collect()
 
-    return ensemble_vec
 # ============================ EnKF functions ============================
 
 # ============================ DEnKF functions ============================

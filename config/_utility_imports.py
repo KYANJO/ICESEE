@@ -186,6 +186,7 @@ if not flag_jupyter:
         "local_analysis": bool(enkf_params.get("local_analysis", False)),
         "observed_params":enkf_params.get("observed_params", []),
         "verbose":_verbose,
+        "param_ens_spread": enkf_params.get("param_ens_spread", []),
     }
 
     if kwargs["joint_estimation"]:
@@ -193,6 +194,9 @@ if not flag_jupyter:
     else:
         params["total_state_param_vars"] = params["num_state_vars"]
     # params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
+
+    # add joint estimation flag to params
+    params["joint_estimation"] = kwargs["joint_estimation"]
 
     # unpack standard deviations
     params.update({

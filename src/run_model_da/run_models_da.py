@@ -604,6 +604,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
     alpha = 1 - params["dt"]/tau
     n = params["nt"]
     rho = np.sqrt((1-alpha**2)/(params["dt"]*(n - 2*alpha - n*alpha**2 + 2*alpha**(n+1))))
+    params_analysis_0 = np.zeros((2, Nens))
     km = 0
     for k in range(params["nt"]):
         
@@ -800,7 +801,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             # # q0 = alpha * q0 + np.sqrt(1 - alpha**2) * w0
                             # q0 = np.random.multivariate_normal(np.zeros(nd), Q_err)
                             Q_err = Q_err[:state_block_size,:state_block_size]
-                            q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                            # q0 = np.sqrt(params["dt"])*rho*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                            q0 = np.sqrt(params["dt"])*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
                             ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] + q0[:state_block_size]
                             
                             # mean_x = np.mean(ensemble_vec[:state_block_size], axis=1)[:,np.newaxis]
@@ -869,7 +871,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             # Add process noise to the ensembles variables only
                             if key in state_keys:
                                 Q_err = Q_err[:state_block_size, :state_block_size]
-                                q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                                # q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                                q0 = np.sqrt(params["dt"])*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
                                 global_data[key][:state_block_size] = global_data[key][:state_block_size] + q0[:state_block_size]
                             
                         # Stack all variables into a single array
@@ -1017,10 +1020,6 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             d = UtilsFunctions(params, ensemble_vec).Obs_fun(hu_obs[:,km])
                             #  -------------
 
-                            # --- get the ensmble pertubations
-
-                            
-
                             # get parameter
                             # parameter_estimated = ensemble_vec[state_block_size:,:]
                             eta = 0.0 # trend term
@@ -1047,14 +1046,12 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         smb_scale = comm_world.bcast(smb_scale, root=0)
 
                         # call the analysis update function
-                        ensemble_vec = analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij,UtilsFunctions,model_kwargs,smb_scale)
+                        analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij,UtilsFunctions,model_kwargs,smb_scale)
                     
                         # update the observation index
                         km += 1
                         hu_obs[state_block_size:,:] *= smb_scale
                         
-                        # inflate the ensemble #TODO: udate before gather: Done
-                        # ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
 
                     else: 
                         # if Nens < size_world:
@@ -1099,7 +1096,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                 
                         if rank_world == 0:
     
-                            H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0]) #TODO: maybe it should be Obs_fun instead of JObs_fun???
+                            H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0])
                             h = UtilsFunctions(params, ensemble_vec).Obs_fun # observation operator
 
                             # compute the observation covariance matrix
