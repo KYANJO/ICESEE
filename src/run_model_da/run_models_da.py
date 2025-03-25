@@ -997,10 +997,12 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         # comm_world.Barrier()
                         if rank_world == 0:
 
-                            ndim = ensemble_vec.shape[0] // params["total_state_param_vars"]
+                            ndim = ensemble_vec.shape[0]//params["total_state_param_vars"]  
                             state_block_size = ndim*params["num_state_vars"]
-                            # ensemble_vec[state_block_size:,:] *= 10
-                            # hu_obs[state_block_size:,:] *= 10
+                            # smb_scale = np.std(ensemble_vec[state_block_size:, :])  
+                            smb_scale = 1.0
+                            ensemble_vec[state_block_size:, :] /= (smb_scale)  # Scale SMB before analysis
+                            hu_obs[state_block_size:,:] /= smb_scale
 
                             # -------------
                             # H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0]) 
@@ -1035,18 +1037,22 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         else:
                             X5 = np.empty((Nens, Nens))
                             analysis_vec_ij = None
+                            smb_scale = 0.0
 
                         if model_kwargs.get('local_analysis', False):
                             shape_ens = ensemble_vec.shape
                             ens_mean = ParallelManager().compute_mean_matrix_from_root(analysis_vec_ij, shape_ens[0], params['Nens'], comm_world, root=0)
                             parallel_write_full_ensemble_from_root(k+1,ens_mean, params,analysis_vec_ij,comm_world)
-                            
+                        
+                        smb_scale = comm_world.bcast(smb_scale, root=0)
+
                         # call the analysis update function
-                        ensemble_vec = analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij,UtilsFunctions,model_kwargs)
+                        ensemble_vec = analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij,UtilsFunctions,model_kwargs,smb_scale)
                     
                         # update the observation index
                         km += 1
-                        # hu_obs[state_block_size:,:] /= 20
+                        hu_obs[state_block_size:,:] *= smb_scale
+                        
                         # inflate the ensemble #TODO: udate before gather: Done
                         # ensemble_vec = UtilsFunctions(params, ensemble_vec).inflate_ensemble(in_place=True)
 

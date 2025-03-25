@@ -72,29 +72,6 @@ issm_cmd = (
     f'matlab -nodisplay -nosplash -nodesktop '
     f'-r "run(\'issm_env\'); runme({nprocs}); exit"'
 )
-
-# subprocess.run(issm_cmd, shell=True, check=True)
-
-# using subprocess to popen
-# p = subprocess.Popen(
-#     issm_cmd, 
-#     shell=True, 
-#     stdout=subprocess.PIPE, 
-#     stderr=subprocess.PIPE,
-#     universal_newlines=True)
-
-# # capture the output
-# stdout, stderr = p.communicate()
-
-# # print the output
-# verbose = 1
-# if verbose:
-#     print(f"STDOUT: {stdout}")
-#     print(f"STDERR: {stderr}")
-
-# # --- wait for the process to complete
-# p.wait()
-
 subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
 
 # -- mimic a forecast run

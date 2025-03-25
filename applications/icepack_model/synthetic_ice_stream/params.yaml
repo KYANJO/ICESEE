@@ -41,9 +41,9 @@ enkf-parameters:
   observed_params: ['smb']
 
   # Statistical parameters (based on the number of state variables)
-  sig_model: [0.1,0.1,0.1]          # model error standard deviation
-  sig_obs: [3,1.5,0.2,0.01]           # observation error standard deviation
-  sig_Q: [3.2,0.8,0.4,0.01]             # process noise standard deviation
+  sig_model: [0.1,0.1,0.1] # model error standard deviation
+  sig_obs: [3,2,0.5,0.1]   # observation error standard deviation
+  sig_Q: [3,2,0.4,0.1]    # process noise standard deviation
 
   seed: 1                 # seed for random number generator
   inflation_factor: 1.0          # inflation factor

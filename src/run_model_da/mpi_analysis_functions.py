@@ -266,10 +266,11 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, d, model_kwargs,UtilsFunctions):
     H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0]) # mxNens, observation operator
 
     # -- get ensemble pertubations
+    # ensemble_perturbations = ensemble_vec - np.mean(ensemble_vec, axis=1).reshape(-1,1)
     
-
     # ----parallelize this step
     Eta = np.zeros((d.shape[0], Nens)) # mxNens, ensemble pertubations
+    # Eta = np.dot(H, ensemble_perturbations) # mxNens, ensemble pertubations
     D   = np.zeros_like(Eta) # mxNens #virtual observations
     HA  = np.zeros_like(D)
     for ens in range(Nens):
@@ -426,7 +427,7 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, d, model_kwargs,UtilsFunctions):
 
     return X5, analysis_vec_ij
 
-def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij,UtilsFunctions,model_kwargs):
+def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij,UtilsFunctions,model_kwargs,smb_scale):
     """
     Function to perform the analysis update using the EnKF
         - broadcast X5 to all processors
@@ -473,7 +474,15 @@ def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij
         ndim = analysis_vec.shape[0] // params["total_state_param_vars"]
         state_block_size = ndim*params["num_state_vars"]
         # analysis_vec[state_block_size:,:] /= 10
-        analysis_vec = UtilsFunctions(params,  analysis_vec).inflate_ensemble(in_place=True)
+        analysis_vec[state_block_size:,:] *= (smb_scale)  # Scale SMB after analysis
+        analysis_vec[state_block_size:,:] = UtilsFunctions(params,  analysis_vec[state_block_size:,:]).inflate_ensemble(in_place=True)
+
+        # check for negative thicknes and set to 1e-3 if vec_input contains h
+        for i, var in enumerate(model_kwargs.get("vec_inputs",[])):
+            if var == "h":
+                start = i * ndim
+                end = start + ndim
+                analysis_vec[start:end, :] = np.maximum(analysis_vec[start:end, :], 1e-2)
 
         # gather from all processors
         # ensemble_vec = BM.allgather(analysis_vec, comm_world)
