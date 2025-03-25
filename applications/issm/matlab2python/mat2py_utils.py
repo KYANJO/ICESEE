@@ -4,6 +4,54 @@ import sys
 import subprocess
 import numpy as np
 
+
+def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
+    """
+    Run ISSM using a MATLAB script via subprocess.Popen.
+
+    Parameters:
+    - issm_cmd: Full command string to run ISSM in MATLAB
+    - nprocs: Number of processors to pass to runme.m (for display/debug)
+    - verbose: If True, print stdout (trimmed) and stderr (only if non-empty)
+    """
+    try:
+        process = subprocess.Popen(
+            issm_cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+
+        stdout, stderr = process.communicate()
+
+        if verbose:
+            stdout_lines = stdout.splitlines()
+            trimmed_stdout = "\n".join(stdout_lines[9:])  # Skip banner
+            print(f"\n[ICESEE] ➤ Running ISSM with {nprocs} processors")
+            print("------ ICESEE<->MATLAB STDOUT ------")
+            print(trimmed_stdout.strip())
+
+            if stderr.strip():  # Only print stderr if there's content
+                print("------ ICESEE<->MATLAB STDERR ------")
+                print(stderr.strip())
+
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(
+                process.returncode, issm_cmd, output=stdout, stderr=stderr
+            )
+
+    except FileNotFoundError:
+        print("❌ Error: MATLAB not found in PATH.")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ MATLAB exited with error code {e.returncode}")
+        if e.stderr.strip():
+            print("------ MATLAB STDERR ------")
+            print(e.stderr.strip())
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        
+
 # --- MATLAB Engine Initialization ---
 # MATLAB Engine Initialization
 def initialize_matlab_engine():
@@ -122,4 +170,4 @@ def install_matlab_engine(matlab_root):
 # Example usage
 if __name__ == "__main__":
     matlab_root = find_matlab_root()
-    install_matlab_engine(matlab_root)
+    # install_matlab_engine(matlab_root)

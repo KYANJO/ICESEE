@@ -19,6 +19,7 @@ sys.path.insert(0, '../../config')
 from _utility_imports import *
 from _utility_imports import params, kwargs, modeling_params, enkf_params, physical_params
 from run_models_da import icesee_model_data_assimilation
+from matlab2python.mat2py_utils import subprocess_cmd_run
 
 # --- Initialize MPI ---
 from parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
@@ -58,7 +59,7 @@ issm_examples_dir = os.path.join(issm_dir, 'examples',kwargs.get('example_name')
 os.chdir(issm_examples_dir)
 print(f"[DEBUG] current working directory: {os.getcwd()}")
 
-# # save model kwargs to a .mat file
+# save model kwargs to a .mat file inside the examples directory
 sio.savemat('model_kwargs.mat', model_kwargs)
 
 # call the run me file to run the model: ISSM uses runme.m to run the model
@@ -72,7 +73,29 @@ issm_cmd = (
     f'-r "run(\'issm_env\'); runme({nprocs}); exit"'
 )
 
-subprocess.run(issm_cmd, shell=True, check=True)
+# subprocess.run(issm_cmd, shell=True, check=True)
+
+# using subprocess to popen
+# p = subprocess.Popen(
+#     issm_cmd, 
+#     shell=True, 
+#     stdout=subprocess.PIPE, 
+#     stderr=subprocess.PIPE,
+#     universal_newlines=True)
+
+# # capture the output
+# stdout, stderr = p.communicate()
+
+# # print the output
+# verbose = 1
+# if verbose:
+#     print(f"STDOUT: {stdout}")
+#     print(f"STDERR: {stderr}")
+
+# # --- wait for the process to complete
+# p.wait()
+
+subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
 
 # -- mimic a forecast run
 # Nens = 4

@@ -18,6 +18,7 @@ modeling-parameters:
 
   example_name: "ISMIP"  # these can be found in the examples folder
   ParamFile: "IsmipA.par"
+  verbose: False            # verbosity level
 
 enkf-parameters:
   # Ensemble Kalman Filter parameters

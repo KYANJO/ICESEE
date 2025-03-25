@@ -167,6 +167,12 @@ if not flag_jupyter:
     # update for time t
     params["t"] = np.linspace(0, int(float(modeling_params["num_years"])), params["nt"] + 1)
 
+    # get verbose flag
+    if args.verbose:
+        _verbose = True
+    else:
+        _verbose  = modeling_params.get("verbose", False)
+
     # model kwargs
     kwargs = {
         "t": params["t"],
@@ -179,6 +185,7 @@ if not flag_jupyter:
         "global_analysis": bool(enkf_params.get("global_analysis", True)),
         "local_analysis": bool(enkf_params.get("local_analysis", False)),
         "observed_params":enkf_params.get("observed_params", []),
+        "verbose":_verbose,
     }
 
     if kwargs["joint_estimation"]:
