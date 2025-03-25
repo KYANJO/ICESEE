@@ -9,7 +9,7 @@
 % Workflow:
 % - During the forecast stage, the model is run Nens times (number of ensembles) 
 %   to generate the ensemble forecast.
-% - The forecast is analyzed using the EnKF to produce the analysis.
+% - The forecast is analyzed using the ICESEE to produce the analysis.
 % - The analysis is then used as the initial condition for the subsequent forecast.
 %
 % The process is repeated for a specified number of cycles. Between cycles, 
@@ -19,15 +19,56 @@
 %
 % =============================================================================
 
+% ---- simple coupling case ----
+% 1. ICESEE: Initialize the ensemble; produce input files for ISSM
+% 2. ISSM: Forecast step; run ISSM for each ensemble member
+% 3. ICESEE: Analysis step; loop ouput back to ICESEE and update the model state using the ensemble forecast
+
 clear all; close all; clc; 
 
 % --- Get the current script directory ---
-script_dir = fileparts(mfilename('fullpath'));
-cd(script_dir); % Change to the script directory
+icesee_dir = fileparts(mfilename('fullpath'));
+cd(icesee_dir); % Change to the script directory
 disp(['Current working directory: ', pwd]);
 
 % --- specify the path to the python environment ---
 pyenv('Version','/Users/bkyanjo3/firedrake/bin/python');
+
+% call the python and icesee mpi module
+mpi_module    = py.importlib.import_module('mpi4py.MPI');
+os_module     = py.importlib.import_module('os');
+sys_module    = py.importlib.import_module('sys');
+h5_module     = py.importlib.import_module('h5py');
+
+
+% --- Utility imports ---
+sys_module.path.insert(int32(0), '../../config');
+% icess_da = py.importlib.import_module('run_models_da');
+utility_module = py.importlib.import_module('_utility_imports');
+
+% Access shared dictionaries
+params           = utility_module.params;
+kwargs           = utility_module.kwargs;
+modeling_params  = utility_module.modeling_params;
+enkf_params      = utility_module.enkf_params;
+physical_params  = utility_module.physical_params;
+
+% -- call the icesee da module --
+run_icesee = utility_module.run_model_da_dir;
+sys_module.path.insert(int32(0), run_icesee);
+icess_da = py.importlib.import_module('run_models_da');
+
+% --- Initialize MPI ---
+pm_module     = py.importlib.import_module('parallel_mpi.icesee_mpi_parallel_manager');
+mpi_object    = pm_module.ParallelManager();
+mpi_init_out  = mpi_object.icesee_mpi_init(params)
+icesee_rank          = mpi_init_out{1}
+icesee_size          = mpi_init_out{2}
+icesee_comm          = mpi_init_out{3}
+
+% display the rank and size
+disp(['Rank: ', num2str(icesee_rank), ' Size: ', num2str(icesee_size)]);
+
 
 % Make the $ISSM_DIR environment variable available
 issm_dir = getenv('ISSM_DIR');  % Retrieve the ISSM_DIR environment variable
@@ -78,12 +119,16 @@ disp(['Current working directory: ', pwd]);
 % Number of ensembles
 Nens = 10;
 
+% call the ICESEE mpi module
+
+
 md=model; % create an empty model structure
 md=triangle(md,'DomainOutline.exp',50000); % create a mesh of the domain of 50km
 md=setmask(md,'all',''); % define glacier systme as an ice shelf
 md=parameterize(md,'Square.par'); % parameterize the model with square.par
 md=setflowequation(md,'SSA','all'); % define all elements as SSA elements
 md.cluster=generic('name',oshostname,'np',2); % set the cluster
+% md.cluster=generic('name',oshostname,'np',icesee_size); % set the cluster
 
 % md = solve(md,'Stressbalance'); % compute the velocity filed of the ice shelf
 
@@ -147,7 +192,7 @@ disp('Forecast step');
 
 % go back to the original directory to call the python script
 % cd(original_dir);
-cd(script_dir);
+cd(icesee_dir);
 disp(['Current working directory: ', pwd]);
 
 % initialize the ensemble
