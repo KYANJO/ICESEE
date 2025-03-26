@@ -1,9 +1,9 @@
 physical-parameters:
   # Domain parameters
-  Lx: 50e3        # (m)
-  Ly: 12e3        # (m)
-  nx: 48         # number of elements in the x-direction
-  ny: 32       # number of elements in the y-direction
+  Lx: 50e2        # (m)
+  Ly: 12e2        # (m)
+  nx: 12         # number of elements in the x-direction
+  ny: 8       # number of elements in the y-direction
   degree: 2       # degree of the polynomial basis functions
 
   # Bedrock slopes 
@@ -25,7 +25,7 @@ modeling-parameters:
   da:   -2.7              # change of accumulation rate
   a_in_p: 1.87            # nurged accumulation rate at the inflow
   da_p: -2.835            # nurged change of accumulation rate
-  num_years: 60          # number of years to run the model
+  num_years: 80          # number of years to run the model
   timesteps_per_year: 2   # number of timesteps per year
 
 enkf-parameters:
