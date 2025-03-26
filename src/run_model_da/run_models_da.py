@@ -801,8 +801,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             # # q0 = alpha * q0 + np.sqrt(1 - alpha**2) * w0
                             # q0 = np.random.multivariate_normal(np.zeros(nd), Q_err)
                             Q_err = Q_err[:state_block_size,:state_block_size]
-                            # q0 = np.sqrt(params["dt"])*rho*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
-                            q0 = np.sqrt(params["dt"])*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                            q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                            # q0 = np.sqrt(params["dt"])*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
                             ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] + q0[:state_block_size]
                             
                             # mean_x = np.mean(ensemble_vec[:state_block_size], axis=1)[:,np.newaxis]
@@ -871,8 +871,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             # Add process noise to the ensembles variables only
                             if key in state_keys:
                                 Q_err = Q_err[:state_block_size, :state_block_size]
-                                # q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
-                                q0 = np.sqrt(params["dt"])*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                                q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                                # q0 = np.sqrt(params["dt"])*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
                                 global_data[key][:state_block_size] = global_data[key][:state_block_size] + q0[:state_block_size]
                             
                         # Stack all variables into a single array
@@ -1044,6 +1044,24 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             parallel_write_full_ensemble_from_root(k+1,ens_mean, params,analysis_vec_ij,comm_world)
                         
                         smb_scale = comm_world.bcast(smb_scale, root=0)
+
+                        # fetch the upper and lower bounds for every paramerter from observed data
+                        ndim = hu_obs.shape[0]//params["total_state_param_vars"]
+                        state_block_size = ndim*params["num_state_vars"]
+                        bounds = []
+                        for i, var in enumerate(model_kwargs["params_vec"]):
+                            bound_idx = (params["num_state_vars"] + i) * ndim
+                            bound_idx_end = bound_idx + ndim
+
+                            param_slice = hu_obs[bound_idx:bound_idx_end, km]
+                            param_min = np.min(param_slice)
+                            param_max = np.max(param_slice)
+
+                            bounds.append(np.array([param_min, param_max]))
+
+                        # pack the bunds into model_kwargs
+                        model_kwargs.update({"bounds": bounds})
+                            
 
                         # call the analysis update function
                         analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij,UtilsFunctions,model_kwargs,smb_scale)

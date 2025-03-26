@@ -17,7 +17,7 @@ from scipy.stats import multivariate_normal, beta
 # seed the random number generator
 np.random.seed(0)
 
-def parallel_write_ensemble_scattered(timestep, ensemble_mean, params, ensemble_chunk, comm, output_file="ensemble_data.h5"):
+def parallel_write_ensemble_scattered(timestep, ensemble_mean, params, ensemble_chunk, comm, model_kwargs, output_file="ensemble_data.h5"):
     """
     Write ensemble data in parallel using h5py and MPI
     ensemble_chunk: local data on each rank with shape (local_nd, Nens)
@@ -70,35 +70,140 @@ def parallel_write_ensemble_scattered(timestep, ensemble_mean, params, ensemble_
             dset = f['ensemble']
             # dset[offset:offset + local_nd, :,timestep] = ensemble_chunk
 
-            # =================
-            ndim = ensemble_chunk.shape[0] // params["total_state_param_vars"]
-            state_block_size = ndim*params["num_state_vars"]
-            param_size = ensemble_chunk.shape[0] - state_block_size
-            alpha = np.ones(param_size)*2.0
-            beta_param = alpha
-            def compute_f_params(alpha, beta_param):
-                mean_x = alpha/(alpha+beta_param)
-                a = 1.0
-                b = -a*mean_x
-                return a,b
+            # ================
+            if False: #TODO: test tomorrow
+                # # extract bounds for the parameters
+                # bounds = model_kwargs["bounds"]
+                # # Function f: Linear, bijective mapping from [0,1] to [l_theta - theta^a, u_theta - theta^a]
+                # def f(x, theta_a_i):
+                #     # Map x (from Beta[0,1]) to the range [l_theta - theta_a_i, u_theta - theta_a_i]
+                #     for i, vars in enumerate(model_kwargs["params_vec"]):
+                #         param_bound = bounds[i]
+                #         l_theta, u_theta = param_bound[0], param_bound[1]
+                #         l_theta = np.ones((theta_a_i.shape[0],1))*l_theta
+                #         u_theta = np.ones((theta_a_i.shape[0],1))*u_theta
+                #         lower = l_theta - theta_a_i
+                #         upper = u_theta - theta_a_i
+                #         x = x*(upper - lower) + lower
+                #     return x
+                
+                # ndim = ensemble_chunk.shape[0] // params["total_state_param_vars"]
+                # state_block_size = ndim*params["num_state_vars"]
+                # param_size = ensemble_chunk.shape[0] - state_block_size
 
-            def update_theta(alpha, beta_param):
-                # theta_f_t = np.zeros_like(theta_prev)
-                f_x_ti = np.zeros((param_size,ensemble_chunk.shape[1]))
-                for i in range(ensemble_chunk.shape[1]):
-                    a,b = compute_f_params(alpha[i], beta_param[i])
-                    x_ti = beta.rvs(alpha[i], beta_param[i])
-                    
-                    f_x_ti[:,i] = a*x_ti + b
+                # alpha_t, beta_t = 2.0, 2.0  # Beta distribution parameters
+                # X_t = beta.rvs(alpha_t, beta_t, ensemble_chunk.shape[1])
+                # pertubations = np.array([f(X_t[i], ensemble_chunk[state_block_size:,i]) for i in range( ensemble_chunk.shape[1])])
+                # prev_data = dset[offset:offset + local_nd, :, timestep-1]
+                # ensemble_chunk[state_block_size:,:] = prev_data[state_block_size:,:] + pertubations
 
-                    # theta_f_t[:,i] = theta_prev[:,i] + f_x_ti
-                # return theta_f_t
-                return f_x_ti
-            
-            # Update ensemble_chunk before writing
-            if state_block_size < ensemble_chunk.shape[0]:
+                # # ensure parameters stay within bounds
+                # for i, vars in enumerate(model_kwargs["params_vec"]):
+                #     param_bound = bounds[i]
+                #     l_theta, u_theta = param_bound[0], param_bound[1]
+                #     ensemble_chunk[state_block_size+i,:] = np.clip(ensemble_chunk[state_block_size+i,:], l_theta, u_theta)
+                
+                # dset[offset:offset + local_nd, :,timestep] = ensemble_chunk
+
+                # ----------
                 prev_data = dset[offset:offset + local_nd, :, timestep-1]
-                ensemble_chunk[state_block_size:,:] = prev_data[state_block_size:,:] + update_theta(alpha, beta_param)
+                n_params = len(model_kwargs["params_vec"])
+                # Extract bounds
+                bounds = model_kwargs["bounds"]
+
+                # Fixed function f
+                def func(x, theta_a_i, l_theta, u_theta):
+                    # lower = l_theta - theta_a_i
+                    # upper = u_theta - theta_a_i
+                    # return lower + x * (upper - lower)
+                    # scale = u_theta - l_theta
+                    # return (x-0.5)*scale 
+                    scale = u_theta - l_theta
+                    current_spread = np.std(theta_a_i, axis=1, keepdims=True)
+                    adaptive_scale = np.maximum(scale, current_spread * 2.0)  # Boost spread
+                    return (x - 0.5) * adaptive_scale
+
+                # Dimensions
+                ndim = ensemble_chunk.shape[0] // params["total_state_param_vars"]  # e.g., 50 / 4 = 12
+                state_block_size = ndim * params["num_state_vars"]  # e.g., 12 * 1 = 12
+                param_size = ensemble_chunk.shape[0] - state_block_size  # e.g., 50 - 12 = 38
+
+                # Perturbations
+                alpha_t, beta_t = 2.0, 2.0
+                X_t = beta.rvs(alpha_t, beta_t, size=(param_size, ensemble_chunk.shape[1]))
+                perturbations = np.zeros((param_size, ensemble_chunk.shape[1]))
+                # print(bounds)
+                # print(bounds[0][0], bounds[0][1])
+                # bounds = np.array([0.5, 1.9])
+                for i in range(n_params):
+                    l_theta, u_theta = bounds[i]
+                    # l_theta, u_theta = bounds
+                    idx_start = i * ndim
+                    idx_end = (i + 1) * ndim
+                    # param_block = ensemble_chunk[state_block_size + idx_start:state_block_size + idx_end, :]
+                    param_block = prev_data[state_block_size + idx_start:state_block_size + idx_end, :]
+                    perturbations[idx_start:idx_end, :] = func(X_t[idx_start:idx_end, :], param_block, l_theta, u_theta)
+
+                # Update ensemble
+                # prev_data = dset[offset:offset + local_nd, :, timestep-1]
+                ensemble_chunk[state_block_size:, :] = prev_data[state_block_size:, :] + perturbations
+
+                # Enforce bounds
+                for i in range(n_params):
+                    # l_theta, u_theta = bounds[i]
+                    # l_theta, u_theta = bounds
+                    idx_start = state_block_size + i * ndim
+                    idx_end = idx_start + ndim
+                    # ensemble_chunk[idx_start:idx_end, :] = np.clip(ensemble_chunk[idx_start:idx_end, :], l_theta, u_theta)
+
+                # Write to dataset
+                dset[offset:offset + local_nd, :, timestep] = ensemble_chunk
+
+
+            # =================
+            if True:
+                ndim = ensemble_chunk.shape[0] // params["total_state_param_vars"]
+                state_block_size = ndim*params["num_state_vars"]
+                param_size = ensemble_chunk.shape[0] - state_block_size
+                alpha = np.ones(param_size)*2.0
+                beta_param = alpha
+                def compute_f_params(alpha, beta_param):
+                    mean_x = alpha/(alpha+beta_param)
+                    a = 1.0
+                    b = -a*mean_x
+                    return a,b
+
+                def update_theta(alpha, beta_param):
+                    # theta_f_t = np.zeros_like(theta_prev)
+                    f_x_ti = np.zeros((param_size,ensemble_chunk.shape[1]))
+                    for i in range(ensemble_chunk.shape[1]):
+                        a,b = compute_f_params(alpha[i], beta_param[i])
+                        x_ti = beta.rvs(alpha[i], beta_param[i])
+                        
+                        f_x_ti[:,i] = a*x_ti + b
+
+                        # theta_f_t[:,i] = theta_prev[:,i] + f_x_ti
+                    # return theta_f_t
+                    return f_x_ti
+                
+                # Update ensemble_chunk before writing
+                if state_block_size < ensemble_chunk.shape[0]:
+                    prev_data = dset[offset:offset + local_nd, :, timestep-1]
+                    ensemble_chunk[state_block_size:,:] = prev_data[state_block_size:,:] + update_theta(alpha, beta_param)
+
+                if False:
+                     # ----------
+                    n_params = len(model_kwargs["params_vec"])
+                    # Extract bounds
+                    # bounds = model_kwargs["bounds"]
+                    bounds = np.array([0.2, 1.3])
+                    # Enforce bounds
+                    for i in range(n_params):
+                        # l_theta, u_theta = bounds[i]
+                        l_theta, u_theta = bounds
+                        idx_start = state_block_size + i * ndim
+                        idx_end = idx_start + ndim
+                        ensemble_chunk[idx_start:idx_end, :] = np.clip(ensemble_chunk[idx_start:idx_end, :], l_theta, u_theta)
 
             # ensemble_chunk[state_block_size:,:] =  dset[offset:offset + local_nd, :,timestep-1] + update_theta(alpha, beta_param)
             dset[offset:offset + local_nd, :,timestep] = ensemble_chunk
@@ -563,7 +668,7 @@ def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij
 
         # gather from all processors
         # ensemble_vec = BM.allgather(analysis_vec, comm_world)
-        parallel_write_ensemble_scattered(k+1,ens_mean, params,analysis_vec, comm_world)
+        parallel_write_ensemble_scattered(k+1,ens_mean, params,analysis_vec, comm_world,model_kwargs)
 
         # clean the memory
         del scatter_ensemble, analysis_vec; gc.collect()
