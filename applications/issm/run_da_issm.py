@@ -21,6 +21,9 @@ from _utility_imports import params, kwargs, modeling_params, enkf_params, physi
 from run_models_da import icesee_model_data_assimilation
 from matlab2python.mat2py_utils import subprocess_cmd_run
 
+# --- Utility Functions ---
+from _issm_model import initialize_model
+
 # --- Initialize MPI ---
 from parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
 icesee_rank, icesee_size, icesee_comm = ParallelManager().icesee_mpi_init(params)
@@ -62,17 +65,20 @@ print(f"[DEBUG] current working directory: {os.getcwd()}")
 # save model kwargs to a .mat file inside the examples directory
 sio.savemat('model_kwargs.mat', model_kwargs)
 
-# call the run me file to run the model: ISSM uses runme.m to run the model
-nprocs = icesee_size
-
 # copy the issm_env.m from icesee_cwd  file to the examples directory
 shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'issm_env.m'), issm_examples_dir)
 
-issm_cmd = (
-    f'matlab -nodisplay -nosplash -nodesktop '
-    f'-r "run(\'issm_env\'); runme({nprocs}); exit"'
-)
-subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
+# --- initaialize the ISSM model ---
+initialize_model(physical_params, modeling_params, icesee_comm)
+
+# # call the run me file to run the model: ISSM uses runme.m to run the model
+# nprocs = icesee_size
+
+# issm_cmd = (
+#     f'matlab -nodisplay -nosplash -nodesktop '
+#     f'-r "run(\'issm_env\'); runme({nprocs}); exit"'
+# )
+# subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
 
 # -- mimic a forecast run
 # Nens = 4
