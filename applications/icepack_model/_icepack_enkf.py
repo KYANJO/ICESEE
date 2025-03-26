@@ -434,8 +434,8 @@ def initialize_ensemble(ens, **kwargs):
         a_in = firedrake.Constant(a_in_p)
         da_  = firedrake.Constant(da_p)
         a   = firedrake.interpolate(a_in + da_ * kwargs["x"] / kwargs["Lx"], Q)
-        initialized_state['smb'] = a.dat.data_ro + np.random.normal(0, 0.01, a.dat.data_ro.size)
-        # initialized_state['smb'] = a.dat.data_ro
+        # initialized_state['smb'] = a.dat.data_ro + np.random.normal(0, 0.01, a.dat.data_ro.size)
+        initialized_state['smb'] = a.dat.data_ro
        
     return initialized_state
 

@@ -49,6 +49,15 @@ class UtilsFunctions:
 
         H[self.params["number_obs_instants"] * 2, n - 2] = 1  # Final element
 
+        # check if we have parameter estimation
+        if self.params.get('joint_estimation', False):
+            ndim = n // self.params["total_state_param_vars"]
+            state_variables_size = ndim*self.params["num_state_vars"]
+            # parameters are not required to observe the state variables
+            num_params_size = n - state_variables_size
+            H_param = np.zeros(num_params_size)
+            H[:,state_variables_size:] = H_param
+            
         return H
 
     def Obs_fun(self, virtual_obs):
