@@ -4,13 +4,18 @@ function initialize_model()
 	kwargs = load('model_kwargs.mat');
 
 	%  access the values of the dictionary
-	ParamFile = char(kwargs.ParamFile);
-	Lx = double(kwargs.Lx); % length of the domain in x direction
-	Ly = double(kwargs.Ly); % length of the domain in y direction
-	nx = double(kwargs.nx); % number of nodes in x direction
-	ny = double(kwargs.ny); % number of nodes in y direction
+	ParamFile 			 = char(kwargs.ParamFile);
+	Lx 					 = double(kwargs.Lx); % length of the domain in x direction
+	Ly 					 = double(kwargs.Ly); % length of the domain in y direction
+	nx 					 = double(kwargs.nx); % number of nodes in x direction
+	ny 					 = double(kwargs.ny); % number of nodes in y direction
+    extrusion_layers     = double(kwargs.extrusion_layers); % number of layers for extrusion
+    extrusion_exponent	 = double(kwargs.extrusion_exponent); % exponent for extrusion
+	flow_model			 = char(kwargs.flow_model); % flow model to use
+	sliding_vx			 = double(kwargs.sliding_vx); % sliding velocity in x
+	sliding_vy			 = double(kwargs.sliding_vy); % sliding velocity in y
 
-    steps = [1:6]; %ISMIPA
+    steps = [1:6]; 
 
     % Mesh generation #1
     if any(steps==1)
@@ -18,18 +23,8 @@ function initialize_model()
 	    %->
 	    md=model();
 	    % generate a squaremesh #help squaremesh
-	    % Side is 80 km long with 20 points
-	    %->
-	    if(ParamFile=='IsmipA.par'),
-		    % md=squaremesh(md,80000,80000,20,20);
-		    md=squaremesh(md,Lx,Ly,nx,ny);
-	    elseif(ParamFile=='IsmipF.par'),
-		    % md=squaremesh(md,100000,100000,30,30);
-			md = squaremesh(md,Lx,Ly,nx,ny);
-	    end
-	    % plot the given mesh #plotdoc
-	    %->
-	    % plotmodel(md,'data','mesh')
+		md = squaremesh(md,Lx,Ly,nx,ny);
+	   
 	    % save the given model
 	    %->
 	    save ./Models/ISMIP.Mesh_generation md;
@@ -46,8 +41,7 @@ function initialize_model()
 	    %->
 	    md=setmask(md,'','');
 	    % plot the given mask #md.mask to locate the field
-	    %->
-	    % plotmodel(md,'data',md.mask.ocean_levelset);
+	
 	    % save the given model
 	    %->
 	    save ./Models/ISMIP.SetMask md;
@@ -79,7 +73,7 @@ function initialize_model()
 	    % vertically extrude the preceding mesh #help extrude
 	    % only 5 layers exponent 1
 	    %->
-	    md=extrude(md,5,1);
+	    md=extrude(md,extrusion_layers,extrusion_exponent);
 	    % plot the 3D geometry #plotdoc
 	    %->
 	    % plotmodel(md,'data',md.geometry.base)
@@ -98,7 +92,7 @@ function initialize_model()
 	    % set the approximation for the flow computation #help setflowequation
 	    % We will be using the Higher Order Model (HO)
 	    %->
-	    md=setflowequation(md,'HO','all');
+	    md=setflowequation(md,flow_model,'all');
 	    % save the given model
 	    %->
 	    save ./Models/ISMIP.SetFlow md;
@@ -125,9 +119,9 @@ function initialize_model()
 	    basalnodes=find(md.mesh.vertexonbase);
 	    % set the sliding to zero on the bed
 	    %->
-	    md.stressbalance.spcvx(basalnodes)=0.0;
+	    md.stressbalance.spcvx(basalnodes)=sliding_vx;
 	    %->
-	    md.stressbalance.spcvy(basalnodes)=0.0;
+	    md.stressbalance.spcvy(basalnodes)=sliding_vy;
 	    % periodic boundaries have to be fixed on the sides
 	    % Find the indices of the sides of the domain, for x and then for y
 	    % for x
