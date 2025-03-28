@@ -1,24 +1,28 @@
 physical-parameters:
   # Domain parameters
-  Lx: 80e3        # (m)
-  Ly: 80e3        # (m)
-  nx: 20         # number of elements in the x-direction
-  ny: 20         # number of elements in the y-direction
+  Lx: 80e3        # (m) A: 80e3, F: 100e3
+  Ly: 80e3        # (m) A: 80e3, F: 100e3
+  nx: 20         # number of elements in the x-direction A: 20, F: 30
+  ny: 20         # number of elements in the y-direction B: 20, F: 30
 
   
 modeling-parameters:
   # Model parameters
-  T: 255.0                # (K) temperature
-  a_in: 1.7               # accumulation rate at the inflow
-  da:   -2.7              # change of accumulation rate
-  a_in_p: 1.87            # nurged accumulation rate at the inflow
-  da_p: -2.835            # nurged change of accumulation rate
-  num_years: 60          # number of years to run the model
-  timesteps_per_year: 2   # number of timesteps per year
+  num_years:  5         # number of years to run the model
+  tinitial: 0.0           # initial time
+  timesteps_per_year: 0.5   # number of timesteps per year
 
   example_name: "ISMIP"  # these can be found in the examples folder
-  ParamFile: "IsmipA.par"
+  ParamFile: "IsmipA.par"  # parameter file, A: IsmipA.par, F: IsmipF.Par
+  steps: 7                 # 7 if A, 8 if F
   verbose: False            # verbosity level
+
+  extrusion_layers: 5     # number of extrusion layers
+  extrusion_exponent: 1 # extrusion exponent
+  flow_model: "HO"      # Higher Order model (HO) 
+  sliding_vx: 0.0       # sliding velocity in x-direction
+  sliding_vy: 0.0       # sliding velocity in y-direction
+
 
 enkf-parameters:
   # Ensemble Kalman Filter parameters

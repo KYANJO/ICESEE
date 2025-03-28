@@ -32,33 +32,43 @@ def initialize_model(physical_params, modeling_params, comm):
     subprocess_cmd_run(issm_cmd, 0, 1)
 
     # --- remove the copied file
-    os.remove('initialize_model.m')
+    # os.remove('initialize_model.m')
 
     
 # ---- ISSM model ----
-def ISSM_model(nprocs,**kwargs):
+def ISSM_model(**kwargs):
     """ des: run the issm model
         - calls the issm run_model.m matlab function to run the model
     """
+
+    # --- get the number of processors ---
+    nprocs = kwargs.get('nprocs')
 
     # --- copy run_model.m to the current directory
     shutil.copyfile(os.path.join(os.path.dirname(__file__), 'run_model.m'), 'run_model.m')
 
     # --- call the run_model.m function ---
+    # issm_cmd = (
+    # f'matlab -nodisplay -nosplash -nodesktop '
+    # f'-r "run(\'issm_env\'); run_model({nprocs}); exit"'
+    # )
     issm_cmd = (
-    f'matlab -nodisplay -nosplash -nodesktop '
-    f'-r "run(\'issm_env\'); run_model; exit"'
+    'matlab -nodisplay -nosplash -nodesktop '
+    '-r "addpath(genpath(getenv(\'ISSM_DIR\'))); '
+    'run(\'issm_env\'); run_model({nprocs}); exit"'
+    .format(nprocs=nprocs)
     )
     subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
 
     # --- remove the copied file
-    os.remove('run_model.m')
+    # os.remove('run_model.m')
 
 # ---- Run model for ISSM ----
 def run_model(ensemble, **kwargs):
     """ des: run the issm model with ensemble matrix from ICESEE
     """
-
+    # --- get the number of processors ---
     nprocs = kwargs.get('nprocs')
+
     # --- call the issm model  to update the state and parameters variables ---
-    ISSM_model(nprocs, **kwargs)
+    ISSM_model(**kwargs)

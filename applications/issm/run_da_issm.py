@@ -10,6 +10,7 @@ import sys
 import os
 import shutil
 import subprocess   
+import socket
 import numpy as np
 import scipy.io as sio
 import h5py
@@ -33,6 +34,16 @@ model_kwargs = {
                'Lx': int(float(physical_params.get('Lx'))), 'Ly': int(float(physical_params.get('Ly'))),
                 'nx': int(float(physical_params.get('nx'))), 'ny': int(float(physical_params.get('ny'))),
                 'ParamFile': modeling_params.get('ParamFile'),
+                'cluster_name': socket.gethostname().replace('-', ''),
+                'extrusion_layers': int(float(modeling_params.get('extrusion_layers'))),
+                'extrusion_exponent': int(float(modeling_params.get('extrusion_exponent'))),
+                'steps': int(float(modeling_params.get('steps'))),
+                'flow_model': modeling_params.get('flow_model'),
+                'sliding_vx': float(modeling_params.get('sliding_vx')),
+                'sliding_vy': float(modeling_params.get('sliding_vy')),
+                'dt': float(modeling_params.get('timesteps_per_year')),
+                'tinitial': float(modeling_params.get('tinitial')),
+                'tfinal': float(modeling_params.get('num_years')),
 }
 
 # --- update Icesee kwargs with model kwargs ---
@@ -60,7 +71,7 @@ issm_examples_dir = os.path.join(issm_dir, 'examples',kwargs.get('example_name')
 
 # --- change directory to the examples directory ---
 os.chdir(issm_examples_dir)
-print(f"[DEBUG] current working directory: {os.getcwd()}")
+# print(f"[DEBUG] current working directory: {os.getcwd()}")
 
 # save model kwargs to a .mat file inside the examples directory
 sio.savemat('model_kwargs.mat', model_kwargs)
@@ -69,29 +80,30 @@ sio.savemat('model_kwargs.mat', model_kwargs)
 shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'issm_env.m'), issm_examples_dir)
 
 # --- initaialize the ISSM model ---
-initialize_model(physical_params, modeling_params, icesee_comm)
+if icesee_rank == 0:
+    initialize_model(physical_params, modeling_params, icesee_comm)
+else:
+    pass
+# wait for rank 0 to write to file before proceeding
+icesee_comm.Barrier()
 
-# # call the run me file to run the model: ISSM uses runme.m to run the model
-# nprocs = icesee_size
+from _issm_enkf import forecast_step_single
 
+kwargs.update({'nprocs': icesee_size, 'verbose': 1})
+forecast_step_single(ensemble=None, **kwargs)
+# nprocs = kwargs.get('nprocs')
 # issm_cmd = (
-#     f'matlab -nodisplay -nosplash -nodesktop '
-#     f'-r "run(\'issm_env\'); runme({nprocs}); exit"'
-# )
+#     'matlab -nodisplay -nosplash -nodesktop '
+#     '-r "addpath(genpath(getenv(\'ISSM_DIR\'))); '
+#     'run(\'issm_env\'); run_model({nprocs}); exit"'
+#     .format(nprocs=nprocs)
+#     )
 # subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
 
-# -- mimic a forecast run
-# Nens = 4
-# for ens in range(Nens):
-#     print(f"Ensemble member: {ens}")
-#     subprocess.run(issm_cmd, shell=True, check=True)
-    # --- Run the ISSM model with data assimilation ---
 
-
-#   save the output to a file
 
 # remove the issm_env.m file from the examples directory
-os.remove(os.path.join(issm_examples_dir, 'issm_env.m'))
+# os.remove(os.path.join(issm_examples_dir, 'issm_env.m'))
 
 # go back to the original directory
 os.chdir(icesee_cwd)

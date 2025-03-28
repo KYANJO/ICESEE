@@ -127,7 +127,7 @@ if not flag_jupyter:
 
     # --- Ensemble Parameters ---
     params.update({
-        "nt": int(float(modeling_params["num_years"])) * int(float(modeling_params["timesteps_per_year"])),
+        "nt": int(float(modeling_params["num_years"])) * int(float(modeling_params["timesteps_per_year"])), # number of time steps
         "dt": 1.0 / float(modeling_params["timesteps_per_year"]),
         "num_state_vars": int(float(enkf_params.get("num_state_vars", 1))),
         "num_param_vars": int(float(enkf_params.get("num_param_vars", 0))),
@@ -176,6 +176,8 @@ if not flag_jupyter:
     # model kwargs
     kwargs = {
         "t": params["t"],
+        "nt": params["nt"],
+        "dt": params["dt"],
         "obs_index": (np.linspace(int(params["freq_obs"]/params["dt"]), \
                             int(params["obs_max_time"]/params["dt"]), int(params["number_obs_instants"]))).astype(int),
         "joint_estimation": bool(enkf_params.get("joint_estimation", False)),
