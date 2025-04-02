@@ -71,6 +71,15 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 				% save the given model
 				%->
 				save ./Models/ISMIP.Transient md;
+
+				% Save final state to dictionary for Python
+				results_out.Vx       = md.results.TransientSolution(end).Vx;
+				results_out.Vy       = md.results.TransientSolution(end).Vy;
+				results_out.Vz       = md.results.TransientSolution(end).Vz;
+				results_out.Pressure = md.results.TransientSolution(end).Pressure;
+
+				% Save just the fields (as flat keys) so Python can read easily
+				save('ensemble_out.mat', '-struct', 'results_out');
 			else
 				% clear all;	 close all;
 				% load the preceding step #help loadmodel

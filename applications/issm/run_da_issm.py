@@ -110,13 +110,17 @@ print(f"[DEBUG] Testing the forecast step function")
 dt = 4
 time = np.arange(0, 25, dt)
 tinitial = 0
+Nens = 2
 for k in range(len(time)-1):
     kwargs.update({'k':k})
     kwargs.update({'dt':dt})
     kwargs.update({'tinitial': time[k]})
     kwargs.update({'tfinal': time[k+1]})
     print(f"\n[DEBUG] Running the model from time: {time[k]} to {time[k+1]}\n")
-    forecast_step_single(ensemble=None, **kwargs)
+    for ens in range(Nens):
+        print(f"[DEBUG] Running ensemble member: {ens}")
+        forecast_step_single(ensemble=None, **kwargs)
+    # forecast_step_single(ensemble=None, **kwargs)
 
 # shut down the matlab server
 # server.shutdown()
