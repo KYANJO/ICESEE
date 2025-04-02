@@ -3,6 +3,60 @@ import os
 import sys
 import subprocess
 import numpy as np
+import time
+
+CMD_FILE = "matlab_cmd.txt"
+LOG_FILE = "matlab_server.log"
+
+class MatlabServer:
+    def __init__(self, issm_dir):
+        self.cmd_file = CMD_FILE
+        self.log_file = LOG_FILE
+        self.process = None
+        self.issm_dir = issm_dir
+
+    def start(self):
+        if os.path.exists(self.cmd_file):
+            os.remove(self.cmd_file)
+
+        matlab_cmd = (
+            "matlab -nodisplay -nosplash -nodesktop "
+            f"-r \"addpath(genpath('{self.issm_dir}')); run('issm_env'); "
+            f"matlab2python/matlab_server('{self.cmd_file}');\""
+        )
+
+        print("[MATLAB Server] Launching MATLAB in background...")
+        self.process = subprocess.Popen(
+            matlab_cmd,
+            shell=True,
+            stdout=open(self.log_file, 'w'),
+            stderr=subprocess.STDOUT
+        )
+        time.sleep(3)
+        print("[MATLAB Server] Launched.")
+
+    def send_command(self, command):
+        print(f"[MATLAB Server] Sending command: {command}")
+        with open(self.cmd_file, 'w') as f:
+            f.write(command)
+
+        while os.path.exists(self.cmd_file):
+            time.sleep(0.5)
+
+    def shutdown(self):
+        print("[MATLAB Server] Shutting down...")
+        self.send_command("exit")
+        self.process.wait()
+        print("[MATLAB Server] Shutdown complete.")
+
+# # Example usage:
+# if __name__ == '__main__':
+#     ISSM_DIR = os.environ.get("ISSM_DIR")
+#     server = MatlabServer(ISSM_DIR)
+#     server.start()
+#     server.send_command("run_model(4, 0, 0.5, 0.0, 4.0)")
+#     server.shutdown()
+
 
 
 def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
@@ -37,9 +91,10 @@ def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
                 print(stderr.strip())
 
         if process.returncode != 0:
-            raise subprocess.CalledProcessError(
-                process.returncode, issm_cmd, output=stdout, stderr=stderr
-            )
+            # raise subprocess.CalledProcessError(
+            #     process.returncode, issm_cmd, output=stdout, stderr=stderr
+            # )
+            raise subprocess.CalledProcessError(process.returncode, issm_cmd)
 
     except FileNotFoundError:
         print("❌ Error: MATLAB not found in PATH.")

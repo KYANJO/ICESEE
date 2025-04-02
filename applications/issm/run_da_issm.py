@@ -20,7 +20,10 @@ sys.path.insert(0, '../../config')
 from _utility_imports import *
 from _utility_imports import params, kwargs, modeling_params, enkf_params, physical_params
 from run_models_da import icesee_model_data_assimilation
-from matlab2python.mat2py_utils import subprocess_cmd_run
+from matlab2python.mat2py_utils import subprocess_cmd_run, MatlabServer
+
+# ISSM_DIR = os.environ.get("ISSM_DIR")
+# server = MatlabServer(ISSM_DIR)
 
 # --- Utility Functions ---
 from _issm_model import initialize_model
@@ -78,6 +81,8 @@ sio.savemat('model_kwargs.mat', model_kwargs)
 
 # copy the issm_env.m from icesee_cwd  file to the examples directory
 shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'issm_env.m'), issm_examples_dir)
+# shutil.copy(os.path.join(icesee_cwd,'initialize_model.m'), issm_examples_dir)
+# shutil.copy(os.path.join(icesee_cwd,'run_model.m'), issm_examples_dir)
 
 # --- initaialize the ISSM model ---
 if icesee_rank == 0:
@@ -90,7 +95,7 @@ icesee_comm.Barrier()
 from _issm_enkf import forecast_step_single
 
 kwargs.update({'nprocs': icesee_size, 'verbose': 1})
-forecast_step_single(ensemble=None, **kwargs)
+# forecast_step_single(ensemble=None, **kwargs)
 # nprocs = kwargs.get('nprocs')
 # issm_cmd = (
 #     'matlab -nodisplay -nosplash -nodesktop '
@@ -100,7 +105,21 @@ forecast_step_single(ensemble=None, **kwargs)
 #     )
 # subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
 
+print(f"[DEBUG] Testing the forecast step function")
+# time = np.linspace(0,80,20)
+dt = 4
+time = np.arange(0, 25, dt)
+tinitial = 0
+for k in range(len(time)-1):
+    kwargs.update({'k':k})
+    kwargs.update({'dt':dt})
+    kwargs.update({'tinitial': time[k]})
+    kwargs.update({'tfinal': time[k+1]})
+    print(f"\n[DEBUG] Running the model from time: {time[k]} to {time[k+1]}\n")
+    forecast_step_single(ensemble=None, **kwargs)
 
+# shut down the matlab server
+# server.shutdown()
 
 # remove the issm_env.m file from the examples directory
 # os.remove(os.path.join(issm_examples_dir, 'issm_env.m'))

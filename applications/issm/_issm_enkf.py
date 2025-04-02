@@ -33,6 +33,5 @@ def generate_true_state(**kwargs):
     
 
     # for k, t in enumerate(kwargs['t']):
-    
     run_model(np.zeros(4), **kwargs)
         
