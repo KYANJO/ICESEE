@@ -13,6 +13,8 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 	
 		%Solving #7
 		nprocs = 4;
+		rank = 0;
+		filename = sprintf('ensemble_output_%d.h5', rank);
 		if any(steps==7)
 			% load the preceding step #help loadmodel
 			% path is given by the organizer with the name of the given step
@@ -50,6 +52,8 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 			% load the preceding step #help loadmodel
 			% path is given by the organizer with the name of the given step
 			%->
+			% Construct filename based on rank
+			filename = sprintf('ensemble_output_%d.h5', rank);
 			if k == 0
 				% load Boundary conditions from the inital conditions
 				md = loadmodel('./Models/ISMIP.BoundaryCondition');
@@ -72,40 +76,20 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 				%->
 				save ./Models/ISMIP.Transient md;
 
-				% Save final state to dictionary for Python
-				results_out.Vx       = md.results.TransientSolution(end).Vx;
-				results_out.Vy       = md.results.TransientSolution(end).Vy;
-				results_out.Vz       = md.results.TransientSolution(end).Vz;
-				results_out.Pressure = md.results.TransientSolution(end).Pressure;
-
-				% Save just the fields (as flat keys) so Python can read easily
-				save('ensemble_out.mat', '-struct', 'results_out');
+				% save these fields to a file for ensemble use
+				fields = {'Vx', 'Vy', 'Vz', 'Pressure'};
+				result = md.results.TransientSolution(end);
+				save_ensemble_hdf5(filename, result, fields);
 			else
-				% clear all;	 close all;
-				% load the preceding step #help loadmodel
-				% md = loadmodel('./Models/ISMIP.Transient');
-				% md.initialization.vx 		= md.results.TransientSolution(end).Vx;     
-				% md.initialization.vy 		= md.results.TransientSolution(end).Vy;
-				% md.initialization.vz 	   	= md.results.TransientSolution(end).Vz;
-				% md.initialization.pressure 	= md.results.TransientSolution(end).Pressure;
-		
-				% % md.geometry.thickness 		= md.results.TransientSolution(end).Thickness;
-				% % md.geometry.base 			= md.results.TransientSolution(end).Base;
-				% % md.geometry.surface 		= md.results.TransientSolution(end).Surface;
-				% % md.smb.mass_balance         = md.results.TransientSolution(end).SmbMassBalance;
-
 				
 				% Load previous model
 				md = loadmodel('./Models/ISMIP.Transient');
-
-				% Load updates from ensemble_out.mat
-				ensemble_out = load('ensemble_out.mat');
-
-				% Update model initial state
-				md.initialization.vx       = ensemble_out.Vx;
-				md.initialization.vy       = ensemble_out.Vy;
-				md.initialization.vz       = ensemble_out.Vz;
-				md.initialization.pressure = ensemble_out.Pressure;
+				filename = sprintf('ensemble_output_%d.h5', rank);
+				% load from an h5 file
+				md.initialization.vx       = h5read(filename, '/Vx');
+				md.initialization.vy       = h5read(filename, '/Vy');
+				md.initialization.vz       = h5read(filename, '/Vz');
+				md.initialization.pressure = h5read(filename, '/Pressure');
 
 				% Time stepping parameters
 				md.timestepping.time_step  = dt;
@@ -123,49 +107,35 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 				% Save model
 				save('./Models/ISMIP.Transient', 'md');
 
-				% Save final state to dictionary for Python
-				results_out.Vx       = md.results.TransientSolution(end).Vx;
-				results_out.Vy       = md.results.TransientSolution(end).Vy;
-				results_out.Vz       = md.results.TransientSolution(end).Vz;
-				results_out.Pressure = md.results.TransientSolution(end).Pressure;
-
-				% Save just the fields (as flat keys) so Python can read easily
-				save('ensemble_out.mat', '-struct', 'results_out');
-
-				% save(sprintf('ensemble_output_%d.mat', rank), '-struct', 'ensemble_out');
-
+				% save these fields to a file for ensemble use
+				fields = {'Vx', 'Vy', 'Vz', 'Pressure'};
+				result = md.results.TransientSolution(end);
+				save_ensemble_hdf5(filename, result, fields);
 
 			end
-	
-			% % Set cluster #md.cluster
-			% % generic parameters #help generic
-			% % set only the name and number of process
-			% %->
-			% md.cluster=generic('name',cluster_name,'np',nprocs);
-			% % Set which control message you want to see #help verbose
-			% %->
-			% md.verbose=verbose('convergence',true);
-			% % set the transient model to ignore the thermal model
-			% % #md.transient
-			% %->
-			% md.transient.isthermal=0;
-			% % define the timestepping scheme
-			% % everything here should be provided in years #md.timestepping
-			% % give the length of the time_step (4 years)
-			% %->
-			% md.timestepping.time_step=dt;
-			% % give final_time (20*4 years time_steps)
-			% md.timestepping.start_time=tinitial;
-			% md.timestepping.final_time=tfinal;
-			% % Solve #help solve
-			% % we are solving a TransientSolution
-			% %->
-			% md=solve(md,'Transient');
-			% % save the given model
-			% %->
-			% save ./Models/ISMIP.Transient md;
-			% % plot the surface velocities #plotdoc
-			% %->
-			% % plotmodel(md,'data',md.results.TransientSolution(20).Vel)
 		end
+	end
+
+	function save_ensemble_hdf5(filename, result, field_names)
+		
+		% Remove file if it already exists
+		if isfile(filename)
+			delete(filename);
+		end
+	
+		% Iterate over each requested field
+		for i = 1:length(field_names)
+			field = field_names{i};
+	
+			% Check field exists in result
+			if isfield(result, field)
+				data = result.(field);
+				h5create(filename, ['/' field], size(data));
+				h5write(filename, ['/' field], data);
+			else
+				warning('Field "%s" not found in result. Skipping.', field);
+			end
+		end
+	
+		fprintf('[HDF5] Saved: %s\n', filename);
 	end
