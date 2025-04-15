@@ -111,6 +111,9 @@ dt = 4
 time = np.arange(0, 25, dt)
 tinitial = 0
 Nens = 2
+
+kwargs.update({'time': time})
+
 for k in range(len(time)-1):
     kwargs.update({'k':k})
     kwargs.update({'dt':dt})

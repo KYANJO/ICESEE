@@ -1,62 +1,116 @@
+# ====================================================================
+# @author: Brian Kyanjo
+# @description: Matlab-python server launcher for ISSM model and other helper functions
+# @date: 2025-04-16
+# ====================================================================
+
 # --- Imports ---
 import os
 import sys
 import subprocess
 import numpy as np
 import time
-
-CMD_FILE = "matlab_cmd.txt"
-LOG_FILE = "matlab_server.log"
+import signal
 
 class MatlabServer:
-    def __init__(self, issm_dir):
-        self.cmd_file = CMD_FILE
-        self.log_file = LOG_FILE
+
+    def __init__(self, matlab_path="matlab", cmdfile="cmdfile.txt", statusfile="statusfile.txt"):
+        """Initialize the MATLAB server configuration."""
+        import os
+        self.matlab_path = matlab_path
+        self.cmdfile = os.path.abspath(cmdfile)
+        self.statusfile = os.path.abspath(statusfile)
         self.process = None
-        self.issm_dir = issm_dir
 
-    def start(self):
-        if os.path.exists(self.cmd_file):
-            os.remove(self.cmd_file)
-
-        matlab_cmd = (
-            "matlab -nodisplay -nosplash -nodesktop "
-            f"-r \"addpath(genpath('{self.issm_dir}')); run('issm_env'); "
-            f"matlab2python/matlab_server('{self.cmd_file}');\""
-        )
-
-        print("[MATLAB Server] Launching MATLAB in background...")
+    def launch(self):
+        import os, subprocess, time, signal, sys
+        """Launch MATLAB server and wait for it to be ready."""
+        print("[Launcher] Starting MATLAB server...")
+        print(f"[Launcher] Command file: {self.cmdfile}")
+        print(f"[Launcher] Status file: {self.statusfile}")
+        
+        # Clean up old files if they exist
+        for f in [self.cmdfile, self.statusfile]:
+            if os.path.exists(f):
+                os.remove(f)
+        
+        # Launch MATLAB in background with redirected I/O
+        matlab_cmd = f"{self.matlab_path} -nodesktop -nosplash -nojvm -r \"matlab2python/matlab_server('{self.cmdfile}', '{self.statusfile}')\""
         self.process = subprocess.Popen(
             matlab_cmd,
             shell=True,
-            stdout=open(self.log_file, 'w'),
-            stderr=subprocess.STDOUT
+            stdout=subprocess.PIPE,  # Redirect stdout
+            stderr=subprocess.PIPE,  # Redirect stderr
+            stdin=subprocess.PIPE,   # Redirect stdin
+            preexec_fn=os.setsid    # Create new process group to handle signals
         )
-        time.sleep(3)
-        print("[MATLAB Server] Launched.")
-
-    def send_command(self, command):
-        print(f"[MATLAB Server] Sending command: {command}")
-        with open(self.cmd_file, 'w') as f:
-            f.write(command)
-
-        while os.path.exists(self.cmd_file):
+        print("[Launcher] MATLAB launched in background.")
+        
+        # Wait for server to signal readiness
+        timeout = 10  # seconds
+        start_time = time.time()
+        while not os.path.exists(self.statusfile):
+            if time.time() - start_time > timeout:
+                print("[Launcher] Error: MATLAB server failed to start within timeout.")
+                os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                sys.exit(1)
             time.sleep(0.5)
+        
+        with open(self.statusfile, 'r') as f:
+            status = f.read().strip()
+        if status != 'ready':
+            print(f"[Launcher] Error: Unexpected status '{status}'.")
+            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            sys.exit(1)
+        
+        print("[Launcher] MATLAB server is ready.")
+
+    def send_command(self, command, timeout=30):
+        """Send a command to MATLAB and wait for it to be processed."""
+        import os, time
+        print(f"[Launcher] Sending command: {command}")
+        with open(self.cmdfile, 'w') as f:
+            f.write(command)
+        
+        # Wait for command to be processed (file deleted)
+        start_time = time.time()
+        while os.path.exists(self.cmdfile):
+            if time.time() - start_time > timeout:
+                print("[Launcher] Error: Command execution timed out.")
+                return False
+            time.sleep(0.5)
+        
+        print("[Launcher] Command processed successfully.")
+        return True
 
     def shutdown(self):
-        print("[MATLAB Server] Shutting down...")
-        self.send_command("exit")
-        self.process.wait()
-        print("[MATLAB Server] Shutdown complete.")
+        """Attempt to gracefully shut down the MATLAB server."""
+        import os, signal, subprocess
+        print("[Launcher] Attempting to shut down MATLAB server...")
+        if self.send_command("exit"):
+            try:
+                # Wait for process to terminate with a timeout
+                self.process.wait(timeout=5)
+                print("[Launcher] MATLAB server shut down successfully.")
+            except subprocess.TimeoutExpired:
+                print("[Launcher] Warning: MATLAB process did not terminate in time, forcing termination.")
+                os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                self.process.wait(timeout=5)  # Wait again after SIGTERM
+                print("[Launcher] MATLAB server terminated.")
+        else:
+            print("[Launcher] Error: Failed to shut down MATLAB server gracefully.")
+            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            self.process.wait(timeout=5)
+            print("[Launcher] MATLAB server terminated.")
 
-# # Example usage:
-# if __name__ == '__main__':
-#     ISSM_DIR = os.environ.get("ISSM_DIR")
-#     server = MatlabServer(ISSM_DIR)
-#     server.start()
-#     server.send_command("run_model(4, 0, 0.5, 0.0, 4.0)")
-#     server.shutdown()
-
+    def reset_terminal(self):
+        """Reset terminal settings to restore normal behavior."""
+        import subprocess
+        try:
+            subprocess.run(['stty', 'sane'], check=True)
+            print("[Launcher] Terminal settings reset.")
+        except subprocess.CalledProcessError:
+            print("[Launcher] Warning: Failed to reset terminal settings.")
 
 
 def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):

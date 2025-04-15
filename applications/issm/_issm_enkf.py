@@ -35,3 +35,17 @@ def generate_true_state(**kwargs):
     # for k, t in enumerate(kwargs['t']):
     run_model(np.zeros(4), **kwargs)
         
+#  --- initialize ensemble members ---
+def initialize_ensemble(ens, **kwargs):
+    """des: initialize the ensemble members
+    Returns: ensemble: the ensemble members
+    """
+    
+    #  -- call the ISSM_model to initialize the ensemble members
+    k = 0
+    time = kwargs.get('time')
+    kwargs.update({'k':k})
+    kwargs.update({'dt':time[1]-time[0]})
+    kwargs.update({'tinitial': time[k]})
+    kwargs.update({'tfinal': time[k+1]})
+    ISSM_model(**kwargs)
