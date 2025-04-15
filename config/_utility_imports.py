@@ -32,8 +32,7 @@ def get_project_root():
 # Get the root of the project
 project_root = get_project_root()
 
-# Construct the path to 'src/models' from the project root
-models_dir = os.path.join(project_root, 'src', 'models')
+# Construct the path to 'src' from the project ro
 utils_dir = os.path.join(project_root, 'src', 'utils')
 run_model_da_dir = os.path.join(project_root, 'src', 'run_model_da')
 config_loader_dir = os.path.join(project_root, 'config')
@@ -41,7 +40,7 @@ applications_dir = os.path.join(project_root, 'applications')
 parallelization_dir = os.path.join(project_root, 'src', 'parallelization')
 
 # Insert the models directory at the beginning of sys.path
-sys.path.insert(0, models_dir)
+# sys.path.insert(0, models_dir)
 sys.path.insert(0, utils_dir)
 sys.path.insert(0, run_model_da_dir)
 sys.path.insert(0, config_loader_dir)
@@ -140,6 +139,7 @@ if not flag_jupyter:
         "parallel_flag": enkf_params.get("parallel_flag", "serial"),
         "n_modeltasks": int(enkf_params.get("n_modeltasks", 1)),
         "execution_flag": int(enkf_params.get("execution_flag", 0)),
+        "data_path": enkf_params.get("data_path",  "/_modelrun_datasets"),
     })
 
     # --- incase CL args not provided ---
@@ -189,6 +189,7 @@ if not flag_jupyter:
         "observed_params":enkf_params.get("observed_params", []),
         "verbose":_verbose,
         "param_ens_spread": enkf_params.get("param_ens_spread", []),
+        "data_path": params["data_path"],
     }
 
     if kwargs["joint_estimation"]:

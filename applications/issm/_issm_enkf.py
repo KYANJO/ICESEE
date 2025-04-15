@@ -52,7 +52,10 @@ def initialize_ensemble(ens, **kwargs):
     ISSM_model(**kwargs)
 
     rank = 0
-    output_filename = f'ensemble_output_{rank}.h5'
+    icesee_path = kwargs.get('icesee_path')
+    data_path = kwargs.get('data_path')
+    # output_filename = f'ensemble_output_{rank}.h5'
+    output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
     with h5py.File(output_filename, 'r') as f:
         # Read the data from the file
         # for key in f.keys():

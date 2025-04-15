@@ -41,9 +41,14 @@ def initialize_model(physical_params, modeling_params, comm):
 
     # read the model kwargs from the file
     server = modeling_params.get('server')
-    issm_cmd = f"run(\'issm_env\'); initialize_model"
-    if not server.send_command(issm_cmd):
-        raise RuntimeError("Command failed.")
+    try:
+        issm_cmd = f"run(\'issm_env\'); initialize_model"
+        if not server.send_command(issm_cmd):
+            raise RuntimeError("Command failed.")
+    except Exception as e:
+        print(f"[DEBUG] Error sending command: {e}")
+        server.shutdown()
+        server.reset_terminal()
 
     # --- remove the copied file
     # os.remove('initialize_model.m')
@@ -108,7 +113,10 @@ def run_model(ensemble, **kwargs):
     rank = 0
 
     # Generate output filename based on rank
-    input_filename = f'ensemble_output_{rank}.h5'
+    # input_filename = f'ensemble_output_{rank}.h5'
+    icesee_path = kwargs.get('icesee_path')
+    data_path = kwargs.get('data_path')
+    input_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
 
     #  write the ensemble to the h5 file
     k = kwargs.get('k')
@@ -143,7 +151,11 @@ def run_model(ensemble, **kwargs):
     #  --- read the output from the h5 file ISSM model ---
     # output_dic = {}
     try:
-        output_filename = f'ensemble_output_{rank}.h5'
+        # output_filename = f'ensemble_output_{rank}.h5'
+        icesee_path = kwargs.get('icesee_path')
+        data_path = kwargs.get('data_path')
+        # output_filename = f'ensemble_output_{rank}.h5'
+        output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
         with h5py.File(output_filename, 'r') as f:
             # Read the data from the file
             # for key in f.keys():

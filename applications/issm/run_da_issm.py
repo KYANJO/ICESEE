@@ -78,7 +78,12 @@ os.chdir(issm_examples_dir)
 # print(f"[DEBUG] current working directory: {os.getcwd()}")
 
 # save model kwargs to a .mat file inside the examples directory
+model_kwargs.update({'icesee_path': icesee_cwd, 'data_path': kwargs.get('data_path')})
 sio.savemat('model_kwargs.mat', model_kwargs)
+#  use a .h5py file instead
+# with h5py.File('model_kwargs.h5', 'w') as f:
+#     for key, value in model_kwargs.items():
+#         f.create_dataset(key, data=value)
 
 # copy the issm_env.m from icesee_cwd  file to the examples directory
 shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'issm_env.m'), issm_examples_dir)
@@ -98,7 +103,7 @@ icesee_comm.Barrier()
 
 from _issm_enkf import forecast_step_single, initialize_ensemble
 
-kwargs.update({'nprocs': icesee_size, 'verbose': 1})
+kwargs.update({'nprocs': icesee_size, 'verbose': 1, "icesee_path": icesee_cwd})
 # forecast_step_single(ensemble=None, **kwargs)
 # nprocs = kwargs.get('nprocs')
 # issm_cmd = (
@@ -118,18 +123,12 @@ Nens = 2
 
 kwargs.update({'time': time})
 
-# -> server approach
-# server = MatlabServer()
-# server.launch()
 try:
-    # Send a test command
-    # if not server.send_command("disp('Hello from Python')"):
-    #     raise RuntimeError("Test command failed.")
     kwargs.update({'server': server})
 
     # -- initialize the ensemble members --
     rank =0
-    output_filename = f'ensemble_output_{rank}.h5'
+    # output_filename = f'ensemble_output_{rank}.h5'
     ndim = 4500
     ensemble = np.zeros((ndim*4, Nens))
     for ens in range(Nens):
@@ -159,26 +158,6 @@ except RuntimeError as e:
     server.reset_terminal()
     sys.exit(1)
 
-
-
-
-    
-# for k in range(len(time)-1):
-#     kwargs.update({'k':k})
-#     kwargs.update({'dt':dt})
-#     kwargs.update({'tinitial': time[k]})
-#     kwargs.update({'tfinal': time[k+1]})
-#     print(f"\n[DEBUG] Running the model from time: {time[k]} to {time[k+1]}\n")
-#     for ens in range(Nens):
-#         print(f"[DEBUG] Running ensemble member: {ens}")
-#         forecast_step_single(ensemble=None, **kwargs)
-    # forecast_step_single(ensemble=None, **kwargs)
-
-# shut down the matlab server
-# server.shutdown()
-
-# remove the issm_env.m file from the examples directory
-# os.remove(os.path.join(issm_examples_dir, 'issm_env.m'))
 
 # go back to the original directory
 os.chdir(icesee_cwd)
