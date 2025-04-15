@@ -5,6 +5,8 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 		kwargs 			= load('model_kwargs.mat');
 		cluster_name    = char(kwargs.cluster_name);
 		steps 			= double(kwargs.steps);
+		icesee_path     = char(kwargs.icesee_path);
+		data_path       = char(kwargs.data_path);
 		% dt 				= double(kwargs.dt);
 		% tinitial 		= double(kwargs.tinitial);
 		% tfinal 			= double(kwargs.tfinal);
@@ -14,7 +16,8 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 		%Solving #7
 		nprocs = 4;
 		rank = 0;
-		filename = sprintf('ensemble_output_%d.h5', rank);
+		% filename = sprintf('ensemble_output_%d.h5', rank);
+		filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank))
 		if any(steps==7)
 			% load the preceding step #help loadmodel
 			% path is given by the organizer with the name of the given step
@@ -52,8 +55,6 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 			% load the preceding step #help loadmodel
 			% path is given by the organizer with the name of the given step
 			%->
-			% Construct filename based on rank
-			filename = sprintf('ensemble_output_%d.h5', rank);
 			if k == 0
 				% load Boundary conditions from the inital conditions
 				md = loadmodel('./Models/ISMIP.BoundaryCondition');
@@ -84,7 +85,6 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 				
 				% Load previous model
 				md = loadmodel('./Models/ISMIP.Transient');
-				filename = sprintf('ensemble_output_%d.h5', rank);
 				% load from an h5 file
 				md.initialization.vx       = h5read(filename, '/Vx');
 				md.initialization.vy       = h5read(filename, '/Vy');
@@ -117,6 +117,12 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 	end
 
 	function save_ensemble_hdf5(filename, result, field_names)
+
+		% Ensure the directory exists
+		[filepath, ~, ~] = fileparts(filename);
+		if ~exist(filepath, 'dir')
+			mkdir(filepath);
+		end
 		
 		% Remove file if it already exists
 		if isfile(filename)
