@@ -88,6 +88,7 @@ shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'issm_env.m'), issm_example
 # --- initaialize the ISSM model ---
 server = MatlabServer()
 server.launch()
+modeling_params.update({'server': server})
 if icesee_rank == 0:
     initialize_model(physical_params, modeling_params, icesee_comm)
 else:
@@ -95,7 +96,7 @@ else:
 # wait for rank 0 to write to file before proceeding
 icesee_comm.Barrier()
 
-from _issm_enkf import forecast_step_single
+from _issm_enkf import forecast_step_single, initialize_ensemble
 
 kwargs.update({'nprocs': icesee_size, 'verbose': 1})
 # forecast_step_single(ensemble=None, **kwargs)
@@ -124,8 +125,20 @@ try:
     # Send a test command
     # if not server.send_command("disp('Hello from Python')"):
     #     raise RuntimeError("Test command failed.")
-
     kwargs.update({'server': server})
+
+    # -- initialize the ensemble members --
+    rank =0
+    output_filename = f'ensemble_output_{rank}.h5'
+    ndim = 4500
+    ensemble = np.zeros((ndim*4, Nens))
+    for ens in range(Nens):
+        ensemble_dic = initialize_ensemble(ens, **kwargs)
+        ensemble[:, ens] = np.concatenate((ensemble_dic['Vx'], ensemble_dic['Vy'], ensemble_dic['Vz'], ensemble_dic['Pressure']))
+        noise = np.random.normal(0, 0.1, ensemble[:, ens].shape)
+        ensemble[:, ens] += noise
+            
+
     for k in range(len(time)-1):
         kwargs.update({'k':k})
         kwargs.update({'dt':dt})
@@ -134,7 +147,7 @@ try:
         print(f"\n[DEBUG] Running the model from time: {time[k]} to {time[k+1]}\n")
         for ens in range(Nens):
             print(f"[DEBUG] Running ensemble member: {ens}")
-            forecast_step_single(ensemble=None, **kwargs)
+            forecast_step_single(ensemble[:,ens], **kwargs)
 
     # shutdown the matlab server
     server.shutdown()

@@ -40,7 +40,8 @@ def initialize_ensemble(ens, **kwargs):
     """des: initialize the ensemble members
     Returns: ensemble: the ensemble members
     """
-    
+    import h5py
+
     #  -- call the ISSM_model to initialize the ensemble members
     k = 0
     time = kwargs.get('time')
@@ -49,3 +50,16 @@ def initialize_ensemble(ens, **kwargs):
     kwargs.update({'tinitial': time[k]})
     kwargs.update({'tfinal': time[k+1]})
     ISSM_model(**kwargs)
+
+    rank = 0
+    output_filename = f'ensemble_output_{rank}.h5'
+    with h5py.File(output_filename, 'r') as f:
+        # Read the data from the file
+        # for key in f.keys():
+        #     output_dic[key] = f[key][:]
+        return {
+        'Vx': f['Vx'][0],
+        'Vy': f['Vy'][0],
+        'Vz': f['Vz'][0],
+        'Pressure': f['Pressure'][0]
+        }
