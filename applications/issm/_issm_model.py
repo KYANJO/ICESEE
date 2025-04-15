@@ -59,13 +59,26 @@ def ISSM_model(**kwargs):
 
     # --- copy run_model.m to the current directory
     shutil.copyfile(os.path.join(os.path.dirname(__file__), 'run_model.m'), 'run_model.m')
+    shutil.copyfile(os.path.join(os.path.dirname(__file__), 'matlab2python', 'matlab_server.m'), 'matlab_server.m')
 
     # --- call the run_model.m function ---
-    issm_cmd = (
-    f'matlab -nodisplay -nosplash -nodesktop '
-    f'-r "run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal}); exit"'
-    )
-    subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
+    # issm_cmd = (
+    # f'matlab -nodisplay -nosplash -nodesktop '
+    # f'-r "run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal}); exit"'
+    # )
+    # subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
+
+    # -> server approach
+    # issm_cmd = (
+    #     f'run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal})'
+    # )
+    server = kwargs.get('server')
+    cmd = f'run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal})'
+    if not server.send_command(cmd):
+        raise RuntimeError(f"Command at step {k} failed.")
+      
+
+    
 
     # try to run the matlab server
     # server.send_command(f"run_model({nprocs},{k},{dt},{tinitial},{tfinal})")

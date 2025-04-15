@@ -23,7 +23,8 @@ from run_models_da import icesee_model_data_assimilation
 from matlab2python.mat2py_utils import subprocess_cmd_run, MatlabServer
 
 # ISSM_DIR = os.environ.get("ISSM_DIR")
-# server = MatlabServer(ISSM_DIR)
+# server = MatlabServer()
+# server.launch()
 
 # --- Utility Functions ---
 from _issm_model import initialize_model
@@ -85,6 +86,8 @@ shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'issm_env.m'), issm_example
 # shutil.copy(os.path.join(icesee_cwd,'run_model.m'), issm_examples_dir)
 
 # --- initaialize the ISSM model ---
+server = MatlabServer()
+server.launch()
 if icesee_rank == 0:
     initialize_model(physical_params, modeling_params, icesee_comm)
 else:
@@ -108,21 +111,54 @@ kwargs.update({'nprocs': icesee_size, 'verbose': 1})
 print(f"[DEBUG] Testing the forecast step function")
 # time = np.linspace(0,80,20)
 dt = 4
-time = np.arange(0, 25, dt)
+time = np.arange(0, 13, dt)
 tinitial = 0
 Nens = 2
 
 kwargs.update({'time': time})
 
-for k in range(len(time)-1):
-    kwargs.update({'k':k})
-    kwargs.update({'dt':dt})
-    kwargs.update({'tinitial': time[k]})
-    kwargs.update({'tfinal': time[k+1]})
-    print(f"\n[DEBUG] Running the model from time: {time[k]} to {time[k+1]}\n")
-    for ens in range(Nens):
-        print(f"[DEBUG] Running ensemble member: {ens}")
-        forecast_step_single(ensemble=None, **kwargs)
+# -> server approach
+# server = MatlabServer()
+# server.launch()
+try:
+    # Send a test command
+    # if not server.send_command("disp('Hello from Python')"):
+    #     raise RuntimeError("Test command failed.")
+
+    kwargs.update({'server': server})
+    for k in range(len(time)-1):
+        kwargs.update({'k':k})
+        kwargs.update({'dt':dt})
+        kwargs.update({'tinitial': time[k]})
+        kwargs.update({'tfinal': time[k+1]})
+        print(f"\n[DEBUG] Running the model from time: {time[k]} to {time[k+1]}\n")
+        for ens in range(Nens):
+            print(f"[DEBUG] Running ensemble member: {ens}")
+            forecast_step_single(ensemble=None, **kwargs)
+
+    # shutdown the matlab server
+    server.shutdown()
+    server.reset_terminal()
+
+except RuntimeError as e:
+    print(f"[Laucher] Error: {e}")
+    server.shutdown()
+    server.reset_terminal()
+    sys.exit(1)
+
+
+
+
+    
+# for k in range(len(time)-1):
+#     kwargs.update({'k':k})
+#     kwargs.update({'dt':dt})
+#     kwargs.update({'tinitial': time[k]})
+#     kwargs.update({'tfinal': time[k+1]})
+#     print(f"\n[DEBUG] Running the model from time: {time[k]} to {time[k+1]}\n")
+#     for ens in range(Nens):
+#         print(f"[DEBUG] Running ensemble member: {ens}")
+#         forecast_step_single(ensemble=None, **kwargs)
     # forecast_step_single(ensemble=None, **kwargs)
 
 # shut down the matlab server
