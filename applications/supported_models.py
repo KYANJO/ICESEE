@@ -28,14 +28,14 @@ class SupportedModels:
             "description": "Icepack model",
             "status": "supported",
         },
+        "issm": {
+            "module": "issm._issm_enkf",
+            "description": "ISSM model",
+            "status": "supported",
+        },
         "lorenz96": {
             "module": "lorenz96.lorenz96_enkf",
             "description": "Lorenz96 model",
-            "status": "supported",
-        },
-         "issm": {
-            "module": "issm._issm_enkf",
-            "description": "ISSM model",
             "status": "supported",
         },
         "flowline": {
