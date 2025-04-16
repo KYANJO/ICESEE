@@ -1,0 +1,90 @@
+#  ==== In the root of your repository
+ICESEE.egg-info
+build
+dist
+
+# ---- in the src directory
+src/.DS_Store
+src/run_model_da/__pycache__
+src/utils/__pycache__
+src/tests/.DS_Store
+src/parallelization/parallel_mpi/__pycache__
+src/EnKF/python_enkf/__pycache__
+src/EnKF/cython_enkf/out
+
+# ---- in the config directory
+config/.DS_Store
+config/__pycache__
+
+# ---- in the application directory
+application/.DS_Store
+application/__pycache__
+# -- Flowline
+applications/flowline/__pycache__
+applications/flowline/results*
+applications/flowline/.DS_Store
+applications/flowline/_modelrun_datasets
+applications/flowline/*.log
+applications/flowline/*.out
+applications/flowline/*.err
+applications/flowline/*.txt
+applications/flowline/*.png
+applications/flowline/*.pdf
+applications/flowline/*.csv
+applications/flowline/*.nc
+applications/flowline/*.h5
+applications/flowline/*.hdf5
+applications/flowline/*.hdf
+
+# -- Icepack
+applications/icepack_model/__pycache__
+applications/icepack_model/shallowIce/__pycache__
+applications/icepack_model/shallowIce/results*
+applications/icepack_model/shallowIce/_modelrun_datasets
+applications/icepack_model/shallowIce/.DS_Store
+applications/icepack_model/synthetic_ice_stream/__pycache__
+applications/icepack_model/synthetic_ice_stream/.DS_Store
+applications/icepack_model/synthetic_ice_stream/results*
+applications/icepack_model/synthetic_ice_stream/_modelrun_datasets
+applications/icepack_model/synthetic_ice_stream/*.log
+applications/icepack_model/synthetic_ice_stream/*.out
+applications/icepack_model/synthetic_ice_stream/*.err
+applications/icepack_model/synthetic_ice_stream/*.txt
+applications/icepack_model/synthetic_ice_stream/*.png
+applications/icepack_model/synthetic_ice_stream/*.pdf
+applications/icepack_model/synthetic_ice_stream/*.csv
+applications/icepack_model/synthetic_ice_stream/*.nc
+applications/icepack_model/synthetic_ice_stream/*.h5
+
+# --- Lorenz96
+applications/lorenz96/__pycache__
+applications/lorenz96/results*
+applications/lorenz96/.DS_Store
+applications/lorenz96/_modelrun_datasets
+applications/lorenz96/*.log
+applications/lorenz96/*.out
+applications/lorenz96/*.err
+applications/lorenz96/*.txt
+applications/lorenz96/*.png
+applications/lorenz96/*.pdf
+applications/lorenz96/*.csv
+applications/lorenz96/*.nc
+applications/lorenz96/*.h5
+applications/lorenz96/*.hdf5
+
+# -- ISSM
+applications/issm/
+applications/issm/__pycache__
+applications/issm/matlab2python/__pycache__
+applications/issm/results*
+applications/issm/.DS_Store
+applications/issm/_modelrun_datasets
+applications/issm/*.log
+applications/issm/*.out
+applications/issm/*.err
+applications/issm/*.txt
+applications/issm/*.png
+applications/issm/*.pdf
+applications/issm/*.csv
+applications/issm/*.nc
+applications/issm/*.h5

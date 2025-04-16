@@ -140,6 +140,7 @@ if not flag_jupyter:
         "n_modeltasks": int(enkf_params.get("n_modeltasks", 1)),
         "execution_flag": int(enkf_params.get("execution_flag", 0)),
         "data_path": enkf_params.get("data_path",  "/_modelrun_datasets"),
+        "model_name": enkf_params.get("model_name", "model"),
     })
 
     # --- incase CL args not provided ---
@@ -190,6 +191,7 @@ if not flag_jupyter:
         "verbose":_verbose,
         "param_ens_spread": enkf_params.get("param_ens_spread", []),
         "data_path": params["data_path"],
+        'example_name': modeling_params.get('example_name', params.get('model_name')),
     }
 
     if kwargs["joint_estimation"]:
