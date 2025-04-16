@@ -1,7 +1,7 @@
 # =============================================================================
 # @author: Brian Kyanjo
 # @date: 2025-01-17
-# @description: Add or remove models to be supported by the application here.
+# @description: Add (register) or remove models to be supported by the application here.
 #               Currently supported models include:
 #               - icepack
 #               - Lorenz96
@@ -33,14 +33,14 @@ class SupportedModels:
             "description": "Lorenz96 model",
             "status": "supported",
         },
-        "flowline": {
-            "module": "flowline.flowline_enkf",
-            "description": "Flowline model",
-            "status": "development",
-        },
-        "issm": {
-            "module": "issm.issm_enkf",
+         "issm": {
+            "module": "issm._issm_enkf",
             "description": "ISSM model",
+            "status": "supported",
+        },
+        "flowline": {
+            "module": "flowline._flowline_enkf",
+            "description": "Flowline model",
             "status": "development",
         },
     }
