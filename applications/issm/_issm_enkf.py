@@ -26,10 +26,10 @@ def forecast_step_single(ensemble=None, **kwargs):
     """
     #  -- control time stepping   
     # time = kwargs.get('time')
-    # k = kwargs.get('k')
-    # time = kwargs.get('t')
+    k = kwargs.get('k')
+    time = kwargs.get('t')
     # k = kwargs.get('t_indx')
-    # kwargs.update({'tinitial': time[k], 'tfinal': time[k+1]})
+    kwargs.update({'tinitial': time[k], 'tfinal': time[k+1]})
 
     #  call the run_model fun to push the state forward in time
     return run_model(ensemble, **kwargs)
@@ -50,24 +50,20 @@ def initialize_ensemble(ens, **kwargs):
     Returns: ensemble: the ensemble members
     """
     import h5py
+    import os, sys
 
-    #  -- call the ISSM_model to initialize the ensemble members
-    k = 0
-    time = kwargs.get('time')
-    kwargs.update({'k':k})
-    kwargs.update({'dt':time[1]-time[0]})
-    kwargs.update({'tinitial': time[k]})
-    kwargs.update({'tfinal': time[k+1]})
+    server              = kwargs.get('server')
+    rank                = kwargs.get('rank')
+    issm_examples_dir   = kwargs.get('issm_examples_dir')
+    icesee_path         = kwargs.get('icesee_path')
 
-    server = kwargs.get('server')
+    #  --- change directory to the issm directory ---
+    os.chdir(issm_examples_dir)
 
     try:
-        # -- call the run_model fun to push the state forward in time
-        ISSM_model(**kwargs)
-
         rank = 0
         icesee_path = kwargs.get('icesee_path')
-        data_path = kwargs.get('data_path')
+        data_path   = kwargs.get('data_path')
         # output_filename = f'ensemble_output_{rank}.h5'
         output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
         with h5py.File(output_filename, 'r') as f:
@@ -86,3 +82,6 @@ def initialize_ensemble(ens, **kwargs):
         server.shutdown()
         server.reset_terminal()
         sys.exit(1)
+    
+    # --- change directory back to the original directory ---
+    os.chdir(icesee_path)

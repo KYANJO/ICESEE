@@ -15,25 +15,28 @@ import signal
 class MatlabServer:
     """A class to manage a MATLAB server for running ISSM models."""
 
-    def __init__(self, matlab_path="matlab", cmdfile="cmdfile.txt", statusfile="statusfile.txt"):
+    def __init__(self, matlab_path="matlab", cmdfile="cmdfile.txt", statusfile="statusfile.txt",verbose=False):
         """Initialize the MATLAB server configuration."""
         self.matlab_path = matlab_path
         self.cmdfile = os.path.abspath(cmdfile)
         self.statusfile = os.path.abspath(statusfile)
         self.process = None
+        self.verbose = verbose
 
     def launch(self):
         """Launch MATLAB server and wait for it to be ready."""
-        print("[Launcher] Starting MATLAB server...")
-        print(f"[Launcher] Command file: {self.cmdfile}")
-        print(f"[Launcher] Status file: {self.statusfile}")
-        
+        if self.verbose:
+            print("[Launcher] Starting MATLAB server...")
+            print(f"[Launcher] Command file: {self.cmdfile}")
+            print(f"[Launcher] Status file: {self.statusfile}")
+            
         # Clean up old files if they exist
         for f in [self.cmdfile, self.statusfile]:
             if os.path.exists(f):
                 os.remove(f)
         
         # Launch MATLAB in background with redirected I/O
+        # matlab_cmd = f"{self.matlab_path} -nodesktop -nosplash -nojvm -r \"matlab_server('{self.cmdfile}', '{self.statusfile}, {int(self.verbose)}')\""
         matlab_cmd = f"{self.matlab_path} -nodesktop -nosplash -nojvm -r \"matlab_server('{self.cmdfile}', '{self.statusfile}')\""
         self.process = subprocess.Popen(
             matlab_cmd,
@@ -43,7 +46,6 @@ class MatlabServer:
             stdin=subprocess.PIPE,   # Redirect stdin
             preexec_fn=os.setsid    # Create new process group to handle signals
         )
-        print("[Launcher] MATLAB launched in background.")
         
         # Wait for server to signal readiness
         timeout = 10  # seconds
@@ -62,42 +64,62 @@ class MatlabServer:
             os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
             sys.exit(1)
         
-        print("[Launcher] MATLAB server is ready.")
+        if self.verbose:
+            print("[Launcher] MATLAB server is ready.")
 
     def send_command(self, command, timeout=300):
         """Send a command to MATLAB and wait for it to be processed."""
-        print(f"[Launcher] Sending command: {command}")
+        if self.verbose:
+            print(f"[Launcher] Sending command: {command}")
         with open(self.cmdfile, 'w') as f:
             f.write(command)
         
         # Wait for command to be processed (file deleted)
         start_time = time.time()
+        sleep_time = 0.2 # start fast and slow down
+        max_sleep  = 5.0 # don't sleep more than this
         while os.path.exists(self.cmdfile):
-            if time.time() - start_time > timeout:
+            elapsed_time = time.time() - start_time
+            if elapsed_time > timeout:
                 print("[Launcher] Error: Command execution timed out.")
                 return False
-            time.sleep(0.5)
+            # if self.verbose:
+            #     print("[Launcher] Waiting for command to be processed...")
+            
+            time.sleep(sleep_time)
+
+            # adjust sleep time to slow down if needed up to max_sleep
+            # sleep_time = min(sleep_time * 1.5, max_sleep)
+            sleep_time = min(sleep_time + (elapsed_time / 10.0), max_sleep)
+            if sleep_time == max_sleep:
+                # step up the sleep time
+                # sleep_time = 0.2
+                print("[Launcher] Warning: Slow command processing detected.")
         
         print("[Launcher] Command processed successfully.")
         return True
 
     def shutdown(self):
         """Attempt to gracefully shut down the MATLAB server."""
-        print("[Launcher] Attempting to shut down MATLAB server...")
+        if self.verbose:
+            print("[Launcher] Attempting to shut down MATLAB server...")
+
         if self.send_command("exit"):
             try:
                 # Capture output to diagnose issues
                 stdout, stderr = self.process.communicate(timeout=5)
-                if stdout:
-                    print("[MATLAB stdout]", stdout.decode())
-                if stderr:
-                    print("[MATLAB stderr]", stderr.decode())
-                print("[Launcher] MATLAB server shut down successfully.")
+                if self.verbose:
+                    if stdout:
+                        print("[MATLAB stdout]", stdout.decode())
+                    if stderr:
+                        print("[MATLAB stderr]", stderr.decode())
+                    print("[Launcher] MATLAB server shut down successfully.")
             except subprocess.TimeoutExpired:
                 print("[Launcher] Warning: MATLAB process did not terminate in time, forcing termination.")
                 os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
                 self.process.wait(timeout=5)
-                print("[Launcher] MATLAB server terminated.")
+                if self.verbose:
+                    print("[Launcher] MATLAB server terminated.")
         else:
             print("[Launcher] Error: Failed to shut down MATLAB server gracefully.")
             os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
@@ -108,7 +130,8 @@ class MatlabServer:
         """Reset terminal settings to restore normal behavior."""
         try:
             subprocess.run(['stty', 'sane'], check=True)
-            print("[Launcher] Terminal settings reset.")
+            if self.verbose:
+                print("[Launcher] Terminal settings reset successfully.")
         except subprocess.CalledProcessError:
             print("[Launcher] Warning: Failed to reset terminal settings.")
 

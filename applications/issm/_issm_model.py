@@ -30,7 +30,6 @@ def initialize_model(physical_params, modeling_params, comm):
 
     # --- copy intialize_model.m to the current directory
     shutil.copyfile(os.path.join(os.path.dirname(__file__), 'initialize_model.m'), 'initialize_model.m')
-    # shutil.copyfile(os.path.join(os.path.dirname(__file__), 'matlab2python', 'matlab_server.m'), 'matlab_server.m')
 
     # --- call the initalize_model.m function ---
     # issm_cmd = (
@@ -39,10 +38,13 @@ def initialize_model(physical_params, modeling_params, comm):
     # )
     # subprocess_cmd_run(issm_cmd, 0, 1)
 
+    icesee_rank = comm.Get_rank()
+    icesee_size = comm.Get_size()
+
     # read the model kwargs from the file
     server = modeling_params.get('server')
     try:
-        issm_cmd = f"run(\'issm_env\'); initialize_model"
+        issm_cmd = f"run(\'issm_env\'); initialize_model({icesee_rank}, {icesee_size})"
         if not server.send_command(issm_cmd):
             raise RuntimeError("Command failed.")
     except Exception as e:
@@ -51,8 +53,7 @@ def initialize_model(physical_params, modeling_params, comm):
         server.reset_terminal()
         sys.exit(1)
 
-    # --- remove the copied file
-    # os.remove('initialize_model.m')
+    # read initial conditions from the 
 
     
 # ---- ISSM model ----
@@ -70,19 +71,8 @@ def ISSM_model(**kwargs):
 
     # --- copy run_model.m to the current directory
     shutil.copyfile(os.path.join(os.path.dirname(__file__), 'run_model.m'), 'run_model.m')
-    shutil.copyfile(os.path.join(os.path.dirname(__file__), 'matlab2python', 'matlab_server.m'), 'matlab_server.m')
 
     # --- call the run_model.m function ---
-    # issm_cmd = (
-    # f'matlab -nodisplay -nosplash -nodesktop '
-    # f'-r "run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal}); exit"'
-    # )
-    # subprocess_cmd_run(issm_cmd, nprocs, kwargs.get('verbose'))
-
-    # -> server approach
-    # issm_cmd = (
-    #     f'run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal})'
-    # )
     server = kwargs.get('server')
     cmd = f'run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal})'
     try:
@@ -93,12 +83,6 @@ def ISSM_model(**kwargs):
         server.shutdown()
         server.reset_terminal()
         sys.exit(1)
-
-    # try to run the matlab server
-    # server.send_command(f"run_model({nprocs},{k},{dt},{tinitial},{tfinal})")
-
-    # --- remove the copied file
-    # os.remove('run_model.m')
 
 # ---- Run model for ISSM ----
 def run_model(ensemble, **kwargs):
@@ -111,9 +95,13 @@ def run_model(ensemble, **kwargs):
 
     # --- get the number of processors ---
     nprocs = kwargs.get('nprocs')
-    server = kwargs.get('server')
-    # rank = kwargs.get('rank')
-    rank = 0
+    server              = kwargs.get('server')
+    rank                = kwargs.get('rank')
+    issm_examples_dir   = kwargs.get('issm_examples_dir')
+    icesee_path         = kwargs.get('icesee_path')
+
+    #  --- change directory to the issm directory ---
+    os.chdir(issm_examples_dir)
 
     try: 
         # Generate output filename based on rank
@@ -152,6 +140,9 @@ def run_model(ensemble, **kwargs):
         # --- call the issm model  to update the state and parameters variables ---
         ISSM_model(**kwargs)
 
+        # -- change directory back to the original directory
+        os.chdir(icesee_path)
+        
         #  --- read the output from the h5 file ISSM model ---
         # output_dic = {}
         try:
@@ -181,4 +172,5 @@ def run_model(ensemble, **kwargs):
         server.reset_terminal()
         sys.exit(1)
     
-    # return output_dic
+    # -- change directory back to the original directory
+    os.chdir(icesee_path)
