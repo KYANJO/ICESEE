@@ -1,4 +1,4 @@
-function initialize_model()
+function initialize_model(rank, nprocs)
 
     %  read kwargs from a .mat file
 	kwargs = load('model_kwargs.mat');
@@ -14,6 +14,10 @@ function initialize_model()
 	flow_model			 = char(kwargs.flow_model); % flow model to use
 	sliding_vx			 = double(kwargs.sliding_vx); % sliding velocity in x
 	sliding_vy			 = double(kwargs.sliding_vy); % sliding velocity in y
+	cluster_name 		 = char(kwargs.cluster_name); % cluster name
+	step_ens  		     = double(kwargs.steps); % step for ensemble 
+	icesee_path		     = char(kwargs.icesee_path); % path to icesee
+	data_path		     = char(kwargs.data_path); % path to data
 
     steps = [1:6]; 
 
@@ -154,5 +158,35 @@ function initialize_model()
 	    %->
 	    save ./Models/ISMIP.BoundaryCondition md;
     end
+
+	if step_ens == 8
+	% 	% --- fetch and save data for ensemble use
+		filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank))
+	% 	% load Boundary conditions from the inital conditions
+		md = loadmodel('./Models/ISMIP.BoundaryCondition');
+	
+	% 	% save these fields to a file for ensemble use
+		fields = {'vx', 'vy', 'vz', 'pressure'};
+	% 	result = md.results.TransientSolution(end);
+		result = md.initialization(end);
+		% save_ensemble_hdf5(filename, result, fields);
+		%  had save to be commented out to avoid overwriting the file
+		if isfile(filename)
+			delete(filename);
+		end
+		vx = result.vx;
+		vy = result.vy;
+		vz = result.vz;
+		pressure = result.pressure;
+		h5create(filename, '/Vx', size(vx));
+		h5write(filename, '/Vx', vx);
+		h5create(filename, '/Vy', size(vy));
+		h5write(filename, '/Vy', vy);
+		h5create(filename, '/Vz', size(vz));
+		h5create(filename, '/Pressure', size(pressure));
+		h5write(filename, '/Vz', vz);
+		h5write(filename, '/Pressure', pressure);
+	end
     
 end
+

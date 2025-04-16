@@ -81,6 +81,7 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 				fields = {'Vx', 'Vy', 'Vz', 'Pressure'};
 				result = md.results.TransientSolution(end);
 				save_ensemble_hdf5(filename, result, fields);
+				% disp['skipping the first step'];
 			else
 				
 				% Load previous model
@@ -113,6 +114,7 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 				save_ensemble_hdf5(filename, result, fields);
 
 			end
+	
 		end
 	end
 
