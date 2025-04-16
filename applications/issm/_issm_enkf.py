@@ -16,12 +16,21 @@ from scipy.stats import multivariate_normal,norm
 
 # --- import utility functions ---
 from _issm_model import *
+# sys.path.insert(0, '../../config')
+# from _utility_imports import icesee_get_index
 
 # --- Forecast step ---
 def forecast_step_single(ensemble=None, **kwargs):
     """ensemble: packs the state variables and parameters of a single ensemble member
     Returns: ensemble: updated ensemble member
     """
+    #  -- control time stepping   
+    # time = kwargs.get('time')
+    # k = kwargs.get('k')
+    # time = kwargs.get('t')
+    # k = kwargs.get('t_indx')
+    # kwargs.update({'tinitial': time[k], 'tfinal': time[k+1]})
+
     #  call the run_model fun to push the state forward in time
     return run_model(ensemble, **kwargs)
 
@@ -49,20 +58,31 @@ def initialize_ensemble(ens, **kwargs):
     kwargs.update({'dt':time[1]-time[0]})
     kwargs.update({'tinitial': time[k]})
     kwargs.update({'tfinal': time[k+1]})
-    ISSM_model(**kwargs)
 
-    rank = 0
-    icesee_path = kwargs.get('icesee_path')
-    data_path = kwargs.get('data_path')
-    # output_filename = f'ensemble_output_{rank}.h5'
-    output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
-    with h5py.File(output_filename, 'r') as f:
-        # Read the data from the file
-        # for key in f.keys():
-        #     output_dic[key] = f[key][:]
-        return {
-        'Vx': f['Vx'][0],
-        'Vy': f['Vy'][0],
-        'Vz': f['Vz'][0],
-        'Pressure': f['Pressure'][0]
-        }
+    server = kwargs.get('server')
+
+    try:
+        # -- call the run_model fun to push the state forward in time
+        ISSM_model(**kwargs)
+
+        rank = 0
+        icesee_path = kwargs.get('icesee_path')
+        data_path = kwargs.get('data_path')
+        # output_filename = f'ensemble_output_{rank}.h5'
+        output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
+        with h5py.File(output_filename, 'r') as f:
+            # Read the data from the file
+            # for key in f.keys():
+            #     output_dic[key] = f[key][:]
+            return {
+            'Vx': f['Vx'][0],
+            'Vy': f['Vy'][0],
+            'Vz': f['Vz'][0],
+            'Pressure': f['Pressure'][0]
+            }
+        
+    except RuntimeError as e:
+        print(f"[DEBUG] Error in run_model: {e}")
+        server.shutdown()
+        server.reset_terminal()
+        sys.exit(1)

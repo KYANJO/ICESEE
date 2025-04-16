@@ -161,6 +161,33 @@ def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
         
+#  --- Add ISSM_DIR to sys.path ---
+def add_issm_dir_to_sys_path(issm_dir=None):
+    """
+    Add ISSM_DIR and its subdirectories to sys.path.
+
+    Parameters:
+    - issm_dir: str or None
+        The ISSM directory path. If None, it tries to get from environment variable 'ISSM_DIR'.
+    """
+
+    import os
+    import sys
+
+    if issm_dir is None:
+        issm_dir = os.environ.get('ISSM_DIR')
+
+    if not issm_dir:
+        raise EnvironmentError("ISSM_DIR is not set. Please set the ISSM_DIR environment variable.")
+
+    if not os.path.isdir(issm_dir):
+        raise FileNotFoundError(f"The ISSM_DIR directory does not exist: {issm_dir}")
+
+    for root, dirs, _ in os.walk(issm_dir):
+        sys.path.insert(0, root)
+
+    print(f"[ICESEE] Added ISSM directory and subdirectories from path: {issm_dir}")
+
 
 # --- MATLAB Engine Initialization ---
 # MATLAB Engine Initialization

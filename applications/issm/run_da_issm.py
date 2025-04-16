@@ -20,7 +20,7 @@ sys.path.insert(0, '../../config')
 from _utility_imports import *
 from _utility_imports import params, kwargs, modeling_params, enkf_params, physical_params
 from run_models_da import icesee_model_data_assimilation
-from matlab2python.mat2py_utils import subprocess_cmd_run, MatlabServer
+from matlab2python.mat2py_utils import  add_issm_dir_to_sys_path, MatlabServer
 
 # ISSM_DIR = os.environ.get("ISSM_DIR")
 # server = MatlabServer()
@@ -57,18 +57,8 @@ kwargs.update(model_kwargs)
 icesee_cwd = os.getcwd()
 
 # --- change directory to issm model directory: make sure ISSM_DIR is set in the environment
-issm_dir = os.environ.get('ISSM_DIR')
-if issm_dir:
-    if os.path.isdir(issm_dir):
-        # Optionally add ISSM_DIR and all subdirectories to sys.path
-        for root, dirs, _ in os.walk(issm_dir):
-            sys.path.insert(0, root)
-
-        print(f"Added ISSM directory and subdirectories from path: {issm_dir}")
-    else:
-        raise FileNotFoundError(f"The ISSM_DIR directory does not exist: {issm_dir}")
-else:
-    raise EnvironmentError("ISSM_DIR is not set. Please set the ISSM_DIR environment variable.")
+issm_dir = os.environ.get('ISSM_DIR')  # make sure ISSM_DIR is set in the environment
+add_issm_dir_to_sys_path(issm_dir)     # add the issm directory to the system path 
 
 # --- make the examples directory available ---
 issm_examples_dir = os.path.join(issm_dir, 'examples',kwargs.get('example_name'))
@@ -151,6 +141,7 @@ try:
     # shutdown the matlab server
     server.shutdown()
     server.reset_terminal()
+    sys.exit(1)
 
 except RuntimeError as e:
     print(f"[Laucher] Error: {e}")

@@ -49,6 +49,7 @@ def initialize_model(physical_params, modeling_params, comm):
         print(f"[DEBUG] Error sending command: {e}")
         server.shutdown()
         server.reset_terminal()
+        sys.exit(1)
 
     # --- remove the copied file
     # os.remove('initialize_model.m')
@@ -91,6 +92,7 @@ def ISSM_model(**kwargs):
         print(f"[DEBUG] Error sending command: {e}")
         server.shutdown()
         server.reset_terminal()
+        sys.exit(1)
 
     # try to run the matlab server
     # server.send_command(f"run_model({nprocs},{k},{dt},{tinitial},{tfinal})")
@@ -109,67 +111,74 @@ def run_model(ensemble, **kwargs):
 
     # --- get the number of processors ---
     nprocs = kwargs.get('nprocs')
+    server = kwargs.get('server')
     # rank = kwargs.get('rank')
     rank = 0
 
-    # Generate output filename based on rank
-    # input_filename = f'ensemble_output_{rank}.h5'
-    icesee_path = kwargs.get('icesee_path')
-    data_path = kwargs.get('data_path')
-    input_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
-
-    #  write the ensemble to the h5 file
-    k = kwargs.get('k')
-
-    if k > 0:
-        # -- create our ensemble for test purposes
-        #  read from input file for now
-        # with h5py.File(input_filename, 'r') as f:
-        #     Vx = f['Vx'][:]
-        #     Vy = f['Vy'][:]
-        #     Vz = f['Vz'][:]
-        #     Pressure = f['Pressure'][:]
-        ndim = ensemble.shape[0] // 4
-        Vx = ensemble[:ndim]
-        Vy = ensemble[ndim:2*ndim]
-        Vz = ensemble[2*ndim:3*ndim]
-        Pressure = ensemble[3*ndim:4*ndim]
-        # -> fetch the vx, vy, vz, and pressure from the ensemble
-        
-        # -----
-        with h5py.File(input_filename, 'w') as f:
-            # f.create_dataset('ensemble', data=ensemble)
-            f.create_dataset('Vx', data=Vx)
-            f.create_dataset('Vy', data=Vy)
-            f.create_dataset('Vz', data=Vz)
-            f.create_dataset('Pressure', data=Pressure)
-        print(f"[HDF5] Saved: {input_filename}")
-
-    # --- call the issm model  to update the state and parameters variables ---
-    ISSM_model(**kwargs)
-
-    #  --- read the output from the h5 file ISSM model ---
-    # output_dic = {}
-    try:
-        # output_filename = f'ensemble_output_{rank}.h5'
+    try: 
+        # Generate output filename based on rank
+        # input_filename = f'ensemble_output_{rank}.h5'
         icesee_path = kwargs.get('icesee_path')
         data_path = kwargs.get('data_path')
-        # output_filename = f'ensemble_output_{rank}.h5'
-        output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
-        with h5py.File(output_filename, 'r') as f:
-            # Read the data from the file
-            # for key in f.keys():
-            #     output_dic[key] = f[key][:]
-            return {
-            'Vx': f['Vx'][0],
-            'Vy': f['Vy'][0],
-            'Vz': f['Vz'][0],
-            'Pressure': f['Pressure'][0]
-            }
+        input_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
 
+        #  write the ensemble to the h5 file
+        k = kwargs.get('k')
 
+        if k > 0:
+            # -- create our ensemble for test purposes
+            #  read from input file for now
+            # with h5py.File(input_filename, 'r') as f:
+            #     Vx = f['Vx'][:]
+            #     Vy = f['Vy'][:]
+            #     Vz = f['Vz'][:]
+            #     Pressure = f['Pressure'][:]
+            ndim = ensemble.shape[0] // 4
+            Vx = ensemble[:ndim]
+            Vy = ensemble[ndim:2*ndim]
+            Vz = ensemble[2*ndim:3*ndim]
+            Pressure = ensemble[3*ndim:4*ndim]
+            # -> fetch the vx, vy, vz, and pressure from the ensemble
+            
+            # -----
+            with h5py.File(input_filename, 'w') as f:
+                # f.create_dataset('ensemble', data=ensemble)
+                f.create_dataset('Vx', data=Vx)
+                f.create_dataset('Vy', data=Vy)
+                f.create_dataset('Vz', data=Vz)
+                f.create_dataset('Pressure', data=Pressure)
+            print(f"[HDF5] Saved: {input_filename}")
+
+        # --- call the issm model  to update the state and parameters variables ---
+        ISSM_model(**kwargs)
+
+        #  --- read the output from the h5 file ISSM model ---
+        # output_dic = {}
+        try:
+            # output_filename = f'ensemble_output_{rank}.h5'
+            icesee_path = kwargs.get('icesee_path')
+            data_path = kwargs.get('data_path')
+            # output_filename = f'ensemble_output_{rank}.h5'
+            output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
+            with h5py.File(output_filename, 'r') as f:
+                # Read the data from the file
+                # for key in f.keys():
+                #     output_dic[key] = f[key][:]
+                return {
+                'Vx': f['Vx'][0],
+                'Vy': f['Vy'][0],
+                'Vz': f['Vz'][0],
+                'Pressure': f['Pressure'][0]
+                }
+
+        except Exception as e:
+            print(f"[DEBUG] Error reading the file: {e}")
+            return None
+        
     except Exception as e:
-        print(f"[DEBUG] Error reading the file: {e}")
-        return None
+        print(f"[DEBUG] Error in run_model: {e}")
+        server.shutdown()
+        server.reset_terminal()
+        sys.exit(1)
     
     # return output_dic
