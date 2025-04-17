@@ -73,7 +73,6 @@ applications/lorenz96/*.h5
 applications/lorenz96/*.hdf5
 
 # -- ISSM
-applications/issm/
 applications/issm/__pycache__
 applications/issm/matlab2python/__pycache__
 applications/issm/results*
