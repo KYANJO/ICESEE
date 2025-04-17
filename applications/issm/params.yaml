@@ -8,7 +8,7 @@ physical-parameters:
   
 modeling-parameters:
   # Model parameters
-  num_years:  80         # number of years to run the model A: 5, F: 80
+  num_years:  13         # number of years to run the model A: 5, F: 80
   tinitial: 0.0           # initial time 
   timesteps_per_year: 4   # number of timesteps per year A: 0.5, F: 4
 
@@ -31,15 +31,15 @@ enkf-parameters:
   obs_max_time: 32           # maximum time for observations
   obs_start_time: 2             # start time for observations
 
-  num_state_vars: 5       # number of state variables  [h,u,v]
+  num_state_vars: 4       # number of state variables  [h,u,v]
   num_param_vars: 0       # number of parameter variables [smb]
-  vec_inputs: ['h','vx','vy','vz','p']
+  vec_inputs: ['Vx','Vy','Vz','Pressure']
   observed_params: []
 
   # Statistical parameters (based on the number of state variables)
   sig_model: [0.1,0.1,0.1] # model error standard deviation
-  sig_obs: [5,2,2,2,4]   # observation error standard deviation
-  sig_Q: [1.5,1.2,0.4,0.4,0.4]    # process noise standard deviation
+  sig_obs: [5,2,2,4]   # observation error standard deviation
+  sig_Q: [1.5,1.2,0.4,0.4]    # process noise standard deviation
 
   seed: 1                 # seed for random number generator
   inflation_factor: 0.8          # inflation factor

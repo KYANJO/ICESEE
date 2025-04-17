@@ -225,3 +225,6 @@ if not flag_jupyter:
             params_vec.append(vars)
 
     kwargs["params_vec"] = params_vec
+
+    # update kwargs dictonary with params
+    kwargs.update({'params': params})

@@ -16,21 +16,6 @@ import scipy.io as sio
 import h5py
 import traceback
 
-import logging
-import psutil
-
-# Configure logging for main
-logging.basicConfig(
-    filename="launcher_log.txt",
-    level=logging.DEBUG,
-    format="%(asctime)s [Main] %(message)s",
-    force=True
-)
-
-def log_message(message):
-    print(f"[Main] {message}", file=sys.stderr, flush=True)
-    logging.debug(message)
-
 # --- Configuration ---
 sys.path.insert(0, '../../config')
 from _utility_imports import *
@@ -95,21 +80,8 @@ os.chdir(issm_examples_dir)
 server = MatlabServer(verbose=1)
 server.launch() # start the server
 
-# log_message(f"Server initialized: {server}")
-# if hasattr(server, 'process') and server.process:
-#     log_message(f"Server process PID: {server.process.pid}")
-
-# # Log environment variables
-# log_message(f"Environment variables: {os.environ}")
-
-# # Log running MATLAB processes
-# matlab_pids = [proc.info['pid'] for proc in psutil.process_iter(['pid', 'name']) if 'matlab' in proc.info['name'].lower()]
-# log_message(f"MATLAB processes after launch: {matlab_pids}")
-
 # Set up global shutdown handler
 setup_server_shutdown(server)
-
-
 
 modeling_params.update({'server': server})
 if icesee_rank == 0:
@@ -193,9 +165,11 @@ os.chdir(icesee_cwd)
 #     sys.exit(1)
 
 
-# run_icesee_with_server(
-#     icesee_model_data_assimilation(
-#     enkf_params["model_name"],
-#     enkf_params["filter_type"],
-#     **kwargs), server
-# )
+result = run_icesee_with_server(
+    icesee_model_data_assimilation(
+    enkf_params["model_name"],
+    enkf_params["filter_type"],
+    **kwargs), server
+)
+if not result:
+    sys.exit(1)
