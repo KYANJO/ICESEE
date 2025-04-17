@@ -25,10 +25,9 @@ def forecast_step_single(ensemble=None, **kwargs):
     Returns: ensemble: updated ensemble member
     """
     #  -- control time stepping   
-    # time = kwargs.get('time')
-    k = kwargs.get('k')
+    # k = kwargs.get('k')
     time = kwargs.get('t')
-    # k = kwargs.get('t_indx')
+    k = kwargs.get('t_indx')
     kwargs.update({'tinitial': time[k], 'tfinal': time[k+1]})
 
     #  call the run_model fun to push the state forward in time
@@ -39,10 +38,59 @@ def generate_true_state(**kwargs):
     """des: generate the true state of the model
     Returns: true_state: the true state of the model
     """
-    
+    params = kwargs.get('params')
+    time   = kwargs.get('t')
+    server = kwargs.get('server')
+    rank   = kwargs.get('rank')
+    issm_examples_dir   = kwargs.get('issm_examples_dir')
+    icesee_path         = kwargs.get('icesee_path')
 
-    # for k, t in enumerate(kwargs['t']):
-    run_model(np.zeros(4), **kwargs)
+    #  --- change directory to the issm directory ---
+    os.chdir(issm_examples_dir)
+
+    try:
+        # --- run the issm model from the initial time to the final time ---
+        ISSM_model(**kwargs)
+
+        try:
+            # output_filename = f'ensemble_output_{rank}.h5'
+            icesee_path = kwargs.get('icesee_path')
+            data_path = kwargs.get('data_path')
+            # output_filename = f'ensemble_output_{rank}.h5'
+            output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
+            with h5py.File(output_filename, 'r') as f:
+                # Read the data from the file
+                # for key in f.keys():
+                #     output_dic[key] = f[key][:]
+                return {
+                'Vx': f['Vx'][0],
+                'Vy': f['Vy'][0],
+                'Vz': f['Vz'][0],
+                'Pressure': f['Pressure'][0]
+                }
+
+        except Exception as e:
+            print(f"[DEBUG] Error reading the file: {e}")
+            return None
+        
+        #  --- change directory back to the original directory ---
+        os.chdir(icesee_path)
+
+    except Exception as e:
+        print(f"[DEBUG] Error sending command: {e}")
+    finally: # Always execute cleanup, even if an error occurs
+        try:
+            server.shutdown()
+            server.reset_terminal()
+        except Exception as e:
+            print(f"[DEBUG] Error shutting down server: {e}")
+        sys.exit(1)
+
+def generate_nurged_state(**kwargs):
+    """generate the nurged state of the model"""
+    #   --- for tetst purposes ---
+    #  just call the generate true state function
+    generate_true_state(**kwargs)
         
 #  --- initialize ensemble members ---
 def initialize_ensemble(ens, **kwargs):
@@ -67,20 +115,23 @@ def initialize_ensemble(ens, **kwargs):
         # output_filename = f'ensemble_output_{rank}.h5'
         output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
         with h5py.File(output_filename, 'r') as f:
-            # Read the data from the file
-            # for key in f.keys():
-            #     output_dic[key] = f[key][:]
             return {
             'Vx': f['Vx'][0],
             'Vy': f['Vy'][0],
             'Vz': f['Vz'][0],
             'Pressure': f['Pressure'][0]
             }
+        # --- change directory back to the original directory ---
+        os.chdir(icesee_path)
         
-    except RuntimeError as e:
-        print(f"[DEBUG] Error in run_model: {e}")
-        server.shutdown()
-        server.reset_terminal()
+    except Exception as e:
+        print(f"[DEBUG] Error sending command: {e}")
+    finally:
+        try:
+            server.shutdown()
+            server.reset_terminal()
+        except Exception as e:
+            print(f"[DEBUG] Error shutting down server: {e}")
         sys.exit(1)
     
     # --- change directory back to the original directory ---

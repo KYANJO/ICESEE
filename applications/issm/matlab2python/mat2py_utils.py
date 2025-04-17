@@ -11,6 +11,8 @@ import subprocess
 import numpy as np
 import time
 import signal
+import traceback
+import logging
 
 class MatlabServer:
     """A class to manage a MATLAB server for running ISSM models."""
@@ -35,37 +37,44 @@ class MatlabServer:
             if os.path.exists(f):
                 os.remove(f)
         
-        # Launch MATLAB in background with redirected I/O
-        # matlab_cmd = f"{self.matlab_path} -nodesktop -nosplash -nojvm -r \"matlab_server('{self.cmdfile}', '{self.statusfile}, {int(self.verbose)}')\""
-        matlab_cmd = f"{self.matlab_path} -nodesktop -nosplash -nojvm -r \"matlab_server('{self.cmdfile}', '{self.statusfile}')\""
-        self.process = subprocess.Popen(
-            matlab_cmd,
-            shell=True,
-            stdout=subprocess.PIPE,  # Redirect stdout
-            stderr=subprocess.PIPE,  # Redirect stderr
-            stdin=subprocess.PIPE,   # Redirect stdin
-            preexec_fn=os.setsid    # Create new process group to handle signals
-        )
-        
-        # Wait for server to signal readiness
-        timeout = 10  # seconds
-        start_time = time.time()
-        while not os.path.exists(self.statusfile):
-            if time.time() - start_time > timeout:
-                print("[Launcher] Error: MATLAB server failed to start within timeout.")
+        try:
+            # Launch MATLAB in background with redirected I/O
+            # matlab_cmd = f"{self.matlab_path} -nodesktop -nosplash -nojvm -r \"matlab_server('{self.cmdfile}', '{self.statusfile}, {int(self.verbose)}')\""
+            matlab_cmd = f"{self.matlab_path} -nodesktop -nosplash -nojvm -r \"matlab_server('{self.cmdfile}', '{self.statusfile}')\""
+            self.process = subprocess.Popen(
+                matlab_cmd,
+                shell=True,
+                stdout=subprocess.PIPE,  # Redirect stdout
+                stderr=subprocess.PIPE,  # Redirect stderr
+                stdin=subprocess.PIPE,   # Redirect stdin
+                preexec_fn=os.setsid    # Create new process group to handle signals
+            )
+            
+            # Wait for server to signal readiness
+            timeout = 10  # seconds
+            start_time = time.time()
+            while not os.path.exists(self.statusfile):
+                if time.time() - start_time > timeout:
+                    print("[Launcher] Error: MATLAB server failed to start within timeout.")
+                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                    sys.exit(1)
+                time.sleep(0.5)
+            
+            with open(self.statusfile, 'r') as f:
+                status = f.read().strip()
+            if status != 'ready':
+                print(f"[Launcher] Error: Unexpected status '{status}'.")
                 os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
                 sys.exit(1)
-            time.sleep(0.5)
-        
-        with open(self.statusfile, 'r') as f:
-            status = f.read().strip()
-        if status != 'ready':
-            print(f"[Launcher] Error: Unexpected status '{status}'.")
-            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            
+            if self.verbose:
+                print("[Launcher] MATLAB server is ready.")
+        except Exception as e:
+            print(f"[Launcher] Error launching MATLAB server: {e}")
+            if self.process:
+                os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
             sys.exit(1)
-        
-        if self.verbose:
-            print("[Launcher] MATLAB server is ready.")
+            
 
     def send_command(self, command, timeout=300):
         """Send a command to MATLAB and wait for it to be processed."""
@@ -125,15 +134,29 @@ class MatlabServer:
             os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
             self.process.wait(timeout=5)
             print("[Launcher] MATLAB server terminated.")
-
+    
     def reset_terminal(self):
-        """Reset terminal settings to restore normal behavior."""
+        """Reset terminal settings to restore normal behavior, if applicable."""
+        if not sys.stdin.isatty() or any(key in os.environ for key in ["MPIEXEC", "OMPI_COMM_WORLD_RANK", "PMI_RANK", "SLURM_JOB_ID"]):
+            if self.verbose:
+                print("[Launcher] Skipping terminal reset (non-interactive or MPI environment).", file=sys.stderr, flush=True)
+            return
         try:
             subprocess.run(['stty', 'sane'], check=True)
             if self.verbose:
-                print("[Launcher] Terminal settings reset successfully.")
-        except subprocess.CalledProcessError:
-            print("[Launcher] Warning: Failed to reset terminal settings.")
+                print("[Launcher] Terminal settings reset successfully.", file=sys.stderr, flush=True)
+        except subprocess.CalledProcessError as e:
+            print(f"[Launcher] Warning: Failed to reset terminal settings: {e}", file=sys.stderr, flush=True)
+
+    # def reset_terminal(self):
+    #     """Reset terminal settings to restore normal behavior."""
+    #     try:
+    #         subprocess.run(['stty', 'sane'], check=True)
+    #         if self.verbose:
+    #             print("[Launcher] Terminal settings reset successfully.")
+    #     except subprocess.CalledProcessError:
+    #         print("[Launcher] Warning: Failed to reset terminal settings.")
+
 
 #  ---- end of MatlabServer class ----
 

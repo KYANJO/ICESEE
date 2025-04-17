@@ -1,0 +1,126 @@
+# ====================================================================
+# @author: Brian Kyanjo
+# @description: Matlab-python server launcher for ISSM model and other helper functions
+# @date: 2025-04-16
+# ====================================================================
+
+import traceback
+import sys
+import os
+import logging
+import signal
+
+# Global server reference and shutdown state
+_global_server = None
+_server_shutdown = False
+_signal_handler_set = False  # Track if signal handler is set
+
+def setup_server_shutdown(server):
+    """Set up global server reference and SIGINT handler for cleanup on KeyboardInterrupt."""
+    global _global_server, _server_shutdown, _signal_handler_set
+    if _signal_handler_set:
+        logging.debug("Global SIGINT handler already set up")
+        return
+
+    _global_server = server
+    _server_shutdown = False
+
+    # Configure logging to a file
+    # clean if it exists
+    if os.path.exists("launcher_log.txt"): os.remove("launcher_log.txt")
+    logging.basicConfig(
+        filename="launcher_log.txt",
+        level=logging.DEBUG,
+        format="%(asctime)s [Launcher] %(message)s",
+        force=True
+    )
+
+    def log_message(message):
+        print(f"[Launcher] {message}", file=sys.stderr, flush=True)
+        logging.debug(message)
+
+    # Signal handler for SIGINT
+    def signal_handler(sig, frame):
+        global _global_server, _server_shutdown
+        log_message("Received SIGINT (KeyboardInterrupt) globally")
+        if _global_server is not None and not _server_shutdown:
+            log_message("Attempting to shut down MATLAB server globally")
+            try:
+                _global_server.shutdown()
+                _server_shutdown = True
+                # Skip reset_terminal in non-interactive or MPI environments
+                mpi_env_vars = ["MPIEXEC", "OMPI_COMM_WORLD_RANK", "PMI_RANK", "SLURM_JOB_ID"]
+                if sys.stdin.isatty() and not any(key in os.environ for key in mpi_env_vars):
+                    log_message("Calling reset_terminal globally")
+                    _global_server.reset_terminal()
+                else:
+                    log_message("Skipping reset_terminal globally (non-interactive or MPI environment)")
+            except Exception as shutdown_error:
+                log_message(f"Failed to shutdown MATLAB server globally: {shutdown_error}")
+            _global_server = None  # Clear reference after shutdown
+        log_message("Exiting due to SIGINT")
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    _signal_handler_set = True
+    log_message("Global SIGINT handler set up for server shutdown")
+
+def run_icesee_with_server(callable_func, server):
+    """Run the specified callable with the given server, handling errors and cleanup."""
+    global _server_shutdown
+    # Ensure logging is configured
+    logging.basicConfig(
+        filename="launcher_log.txt",
+        level=logging.DEBUG,
+        format="%(asctime)s [Launcher] %(message)s",
+        force=True
+    )
+
+    # Also log to stderr with forced flushing
+    def log_message(message):
+        print(f"[Launcher] {message}", file=sys.stderr, flush=True)
+        logging.debug(message)
+
+    # Ensure Python output is unbuffered
+    os.environ["PYTHONUNBUFFERED"] = "1"
+    sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
+    sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', buffering=1)
+
+    # Get function name for logging
+    func_name = getattr(callable_func, '__name__', 'anonymous_function')
+    
+    try:
+        log_message(f"Starting {func_name}")
+        result = callable_func()
+        log_message(f"{func_name} result: {result}")
+        if not result:
+            raise RuntimeError(f"{func_name} failed.")
+        return True
+
+    except RuntimeError as e:
+        log_message(f"RuntimeError: {e}")
+        log_message(f"Full traceback: {traceback.format_exc()}")
+        return False
+    except Exception as e:
+        log_message(f"Unexpected error: {e}")
+        log_message(f"Full traceback: {traceback.format_exc()}")
+        return False
+    except KeyboardInterrupt:
+        log_message("Process interrupted by user within run_icesee_with_server")
+        return False
+    finally:
+        if not _server_shutdown:
+            log_message("Attempting to shut down MATLAB server within run_icesee_with_server")
+            try:
+                server.shutdown()
+                _server_shutdown = True
+                # Skip reset_terminal in non-interactive or MPI environments
+                mpi_env_vars = ["MPIEXEC", "OMPI_COMM_WORLD_RANK", "PMI_RANK", "SLURM_JOB_ID"]
+                if sys.stdin.isatty() and not any(key in os.environ for key in mpi_env_vars):
+                    log_message("Calling reset_terminal within run_icesee_with_server")
+                    server.reset_terminal()
+                else:
+                    log_message("Skipping reset_terminal within run_icesee_with_server (non-interactive or MPI environment)")
+            except Exception as shutdown_error:
+                log_message(f"Failed to shutdown MATLAB server within run_icesee_with_server: {shutdown_error}")
+        log_message("Exiting run_icesee_with_server")

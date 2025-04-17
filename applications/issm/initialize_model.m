@@ -161,7 +161,7 @@ function initialize_model(rank, nprocs)
 
 	if step_ens == 8
 	% 	% --- fetch and save data for ensemble use
-		filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank))
+		filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank));
 	% 	% load Boundary conditions from the inital conditions
 		md = loadmodel('./Models/ISMIP.BoundaryCondition');
 	

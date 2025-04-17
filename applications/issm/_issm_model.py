@@ -10,15 +10,13 @@ import sys
 import os
 import shutil
 import numpy as np
+from functools import partial
 from scipy.stats import multivariate_normal,norm
 
-
-# utility imports
-from matlab2python.mat2py_utils import subprocess_cmd_run, MatlabServer
-
-# ISSM_DIR = os.environ.get("ISSM_DIR")
-# server = MatlabServer(ISSM_DIR)
-# server.start()
+# --- Utility imports ---
+sys.path.insert(0, '../../config')
+from _utility_imports import icesee_get_index
+from matlab2python.server_utils import run_icesee_with_server
 
 # --- model initialization ---
 def initialize_model(physical_params, modeling_params, comm):
@@ -31,27 +29,31 @@ def initialize_model(physical_params, modeling_params, comm):
     # --- copy intialize_model.m to the current directory
     shutil.copyfile(os.path.join(os.path.dirname(__file__), 'initialize_model.m'), 'initialize_model.m')
 
-    # --- call the initalize_model.m function ---
-    # issm_cmd = (
-    # f'matlab -nodisplay -nosplash -nodesktop '
-    # f'-r "run(\'issm_env\'); initialize_model; exit"'
-    # )
-    # subprocess_cmd_run(issm_cmd, 0, 1)
-
     icesee_rank = comm.Get_rank()
     icesee_size = comm.Get_size()
 
     # read the model kwargs from the file
     server = modeling_params.get('server')
-    try:
-        issm_cmd = f"run(\'issm_env\'); initialize_model({icesee_rank}, {icesee_size})"
-        if not server.send_command(issm_cmd):
-            raise RuntimeError("Command failed.")
-    except Exception as e:
-        print(f"[DEBUG] Error sending command: {e}")
-        server.shutdown()
-        server.reset_terminal()
+    issm_cmd = f"run(\'issm_env\'); initialize_model({icesee_rank}, {icesee_size})"
+    # func = partial()
+    result = run_icesee_with_server(lambda: server.send_command(issm_cmd),server)
+    if not result:
         sys.exit(1)
+
+    # try:
+    #     issm_cmd = f"run(\'issm_env\'); initialize_model({icesee_rank}, {icesee_size})"
+    #     if not server.send_command(issm_cmd):
+    #         raise RuntimeError("Command failed.")
+    # except Exception as e:
+    #     print(f"[DEBUG] Error sending command: {e}")
+    # finally:
+    #     try:
+    #         server.shutdown()
+    #         server.reset_terminal()
+    #     except Exception as e:
+    #         print(f"[DEBUG] Error shutting down server: {e}")
+    #     sys.exit(1)
+
 
     # read initial conditions from the 
 
@@ -75,14 +77,22 @@ def ISSM_model(**kwargs):
     # --- call the run_model.m function ---
     server = kwargs.get('server')
     cmd = f'run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal})'
-    try:
-        if not server.send_command(cmd):
-            raise RuntimeError(f"Command at step {k} failed.")
-    except Exception as e:
-        print(f"[DEBUG] Error sending command: {e}")
-        server.shutdown()
-        server.reset_terminal()
+    result = run_icesee_with_server(lambda: server.send_command(cmd),server)
+    if not result:
         sys.exit(1)
+
+    # try:
+    #     if not server.send_command(cmd):
+    #         raise RuntimeError(f"Command at step {k} failed.")
+    # except Exception as e:
+    #     print(f"[DEBUG] Error sending command: {e}")
+    # finally:
+    #     try:
+    #         server.shutdown()
+    #         server.reset_terminal()
+    #     except Exception as e:
+    #         print(f"[DEBUG] Error shutting down server: {e}")
+    #     sys.exit(1)
 
 # ---- Run model for ISSM ----
 def run_model(ensemble, **kwargs):
@@ -113,6 +123,11 @@ def run_model(ensemble, **kwargs):
         #  write the ensemble to the h5 file
         k = kwargs.get('k')
 
+        # -- call teh icess_get_index function to get the index of the ensemble
+        print(f"[DEBUG] Ensemble shape: {ensemble.shape}")
+        print(f"[DEBUG] Ensemble: {ensemble[:5]}")
+        vecs, indx_map, _ = icesee_get_index(ensemble, **kwargs)
+
         if k > 0:
             # -- create our ensemble for test purposes
             #  read from input file for now
@@ -121,11 +136,15 @@ def run_model(ensemble, **kwargs):
             #     Vy = f['Vy'][:]
             #     Vz = f['Vz'][:]
             #     Pressure = f['Pressure'][:]
-            ndim = ensemble.shape[0] // 4
-            Vx = ensemble[:ndim]
-            Vy = ensemble[ndim:2*ndim]
-            Vz = ensemble[2*ndim:3*ndim]
-            Pressure = ensemble[3*ndim:4*ndim]
+            # ndim = ensemble.shape[0] // 4
+            # Vx = ensemble[0:ndim]
+            # Vy = ensemble[ndim:2*ndim]
+            # Vz = ensemble[2*ndim:3*ndim]
+            # Pressure = ensemble[3*ndim:4*ndim]
+            Vx = ensemble[indx_map["Vx"]]
+            Vy = ensemble[indx_map["Vy"]]
+            Vz = ensemble[indx_map["Vz"]]
+            Pressure = ensemble[indx_map["Pressure"]]
             # -> fetch the vx, vy, vz, and pressure from the ensemble
             
             # -----
@@ -144,7 +163,6 @@ def run_model(ensemble, **kwargs):
         os.chdir(icesee_path)
         
         #  --- read the output from the h5 file ISSM model ---
-        # output_dic = {}
         try:
             # output_filename = f'ensemble_output_{rank}.h5'
             icesee_path = kwargs.get('icesee_path')
@@ -167,9 +185,13 @@ def run_model(ensemble, **kwargs):
             return None
         
     except Exception as e:
-        print(f"[DEBUG] Error in run_model: {e}")
-        server.shutdown()
-        server.reset_terminal()
+        print(f"[DEBUG] Error sending command: {e}")
+    finally:
+        try:
+            server.shutdown()
+            server.reset_terminal()
+        except Exception as e:
+            print(f"[DEBUG] Error shutting down server: {e}")
         sys.exit(1)
     
     # -- change directory back to the original directory
