@@ -169,11 +169,20 @@ function initialize_model(rank, nprocs)
 		fields = {'vx', 'vy', 'vz', 'pressure'};
 	% 	result = md.results.TransientSolution(end);
 		result = md.initialization(end);
-		% save_ensemble_hdf5(filename, result, fields);
-		%  had save to be commented out to avoid overwriting the file
+		
+
+		% Ensure the directory exists
+		[filepath, ~, ~] = fileparts(filename);
+		if ~exist(filepath, 'dir')
+			mkdir(filepath);
+		end
+
+		% Check if the file exists and delete it if it does
 		if isfile(filename)
 			delete(filename);
 		end
+
+		%  save the fields to the file
 		vx = result.vx;
 		vy = result.vy;
 		vz = result.vz;

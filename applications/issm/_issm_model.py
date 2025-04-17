@@ -10,7 +10,6 @@ import sys
 import os
 import shutil
 import numpy as np
-from functools import partial
 from scipy.stats import multivariate_normal,norm
 
 # --- Utility imports ---
@@ -33,30 +32,31 @@ def initialize_model(physical_params, modeling_params, comm):
     icesee_size = comm.Get_size()
 
     # read the model kwargs from the file
-    server = modeling_params.get('server')
+    server      = modeling_params.get('server')
+    icesee_path = modeling_params.get('icesee_path')
+    data_path   = modeling_params.get('data_path')
     issm_cmd = f"run(\'issm_env\'); initialize_model({icesee_rank}, {icesee_size})"
-    # func = partial()
     result = run_icesee_with_server(lambda: server.send_command(issm_cmd),server)
     if not result:
         sys.exit(1)
+    
+    # fetch model size from output file
+    try: 
+        output_filename = f'{icesee_path}{data_path}/ensemble_output_{icesee_rank}.h5'
+        # print(f"[DEBUG] Attempting to open file: {output_filename}")
+        if not os.path.exists(output_filename):
+            print(f"[ERROR] File does not exist: {output_filename}")
+            return None
+        with h5py.File(output_filename, 'r') as f:
+            Vx = f['Vx'][0]
+            # get the size of the Vx variable
+            nd = Vx.shape[0]
+            # print(f"[DEBUG] Vx shape: {Vx.shape}")
+            return nd
+    except Exception as e:
+        print(f"[DEBUG] Error reading the file: {e}")
 
-    # try:
-    #     issm_cmd = f"run(\'issm_env\'); initialize_model({icesee_rank}, {icesee_size})"
-    #     if not server.send_command(issm_cmd):
-    #         raise RuntimeError("Command failed.")
-    # except Exception as e:
-    #     print(f"[DEBUG] Error sending command: {e}")
-    # finally:
-    #     try:
-    #         server.shutdown()
-    #         server.reset_terminal()
-    #     except Exception as e:
-    #         print(f"[DEBUG] Error shutting down server: {e}")
-    #     sys.exit(1)
-
-
-    # read initial conditions from the 
-
+        
     
 # ---- ISSM model ----
 def ISSM_model(**kwargs):
@@ -80,19 +80,6 @@ def ISSM_model(**kwargs):
     result = run_icesee_with_server(lambda: server.send_command(cmd),server)
     if not result:
         sys.exit(1)
-
-    # try:
-    #     if not server.send_command(cmd):
-    #         raise RuntimeError(f"Command at step {k} failed.")
-    # except Exception as e:
-    #     print(f"[DEBUG] Error sending command: {e}")
-    # finally:
-    #     try:
-    #         server.shutdown()
-    #         server.reset_terminal()
-    #     except Exception as e:
-    #         print(f"[DEBUG] Error shutting down server: {e}")
-    #     sys.exit(1)
 
 # ---- Run model for ISSM ----
 def run_model(ensemble, **kwargs):

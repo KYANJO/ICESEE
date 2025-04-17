@@ -8,13 +8,10 @@
 # --- Imports ---
 import sys
 import os
-import shutil
-import subprocess   
+import shutil  
 import socket
 import numpy as np
 import scipy.io as sio
-import h5py
-import traceback
 
 # --- Configuration ---
 sys.path.insert(0, '../../config')
@@ -83,88 +80,25 @@ server.launch() # start the server
 # Set up global shutdown handler
 setup_server_shutdown(server)
 
-modeling_params.update({'server': server})
+# --- intialize ISSM model ---
+modeling_params.update({'server': server, 
+                        'icesee_path': icesee_cwd,
+                        'data_path': kwargs.get('data_path')})
 if icesee_rank == 0:
-    initialize_model(physical_params, modeling_params, icesee_comm)
+    variable_size = initialize_model(physical_params, modeling_params, icesee_comm)
 else:
-    pass
+    variable_size = 0.0
+
 # wait for rank 0 to write to file before proceeding
 icesee_comm.Barrier()
+variable_size = icesee_comm.bcast(variable_size, root=0)
+params.update({'nd': variable_size*params.get('total_state_param_vars')})
 
 # --- change directory back to the original directory ---
 os.chdir(icesee_cwd)
 
-# from _issm_enkf import forecast_step_single, initialize_ensemble
-
-
-# print(f"[DEBUG] current working directory: {os.getcwd()}")
-# # time = np.linspace(0,80,20)
-# dt = 4
-# time = np.arange(0, 13, dt)
-# tinitial = 0
-# Nens = 2
-
-# kwargs.update({'t': time})
-
-# try:
-#     kwargs.update({'server': server})
-
-#     # -- initialize the ensemble members --
-#     rank =0
-#     # output_filename = f'ensemble_output_{rank}.h5'
-#     ndim = 4500
-#     ensemble = np.zeros((ndim*4, Nens))
-#     for ens in range(Nens):
-#         ensemble_dic = initialize_ensemble(ens, **kwargs)
-#         ensemble[:, ens] = np.concatenate((ensemble_dic['Vx'], ensemble_dic['Vy'], ensemble_dic['Vz'], ensemble_dic['Pressure']))
-#         noise = np.random.normal(0, 0.1, ensemble[:, ens].shape)
-#         ensemble[:, ens] += noise
-            
-
-#     for k in range(len(time)-1):
-#         kwargs.update({'k':k})
-#         # kwargs.update({'dt':dt})
-#         # kwargs.update({'tinitial': time[k]})
-#         # kwargs.update({'tfinal': time[k+1]})
-#         print(f"\n[DEBUG] Running the model from time: {time[k]} to {time[k+1]}\n")
-#         for ens in range(Nens):
-#             print(f"[DEBUG] Running ensemble member: {ens}")
-#             forecast_step_single(ensemble[:,ens], **kwargs)
-
-#     # shutdown the matlab server
-#     server.shutdown()
-#     server.reset_terminal()
-#     print(f"[DEBUG] current working directory: {os.getcwd()}")
-#     sys.exit(1)
-
-# except RuntimeError as e:
-#     print(f"[Laucher] Error: {e}")
-#     server.shutdown()
-#     server.reset_terminal()
-#     sys.exit(1)
-
-
 # --- run the model ---
-# try:
-#     if not icesee_model_data_assimilation(
-#         enkf_params["model_name"],
-#         enkf_params["filter_type"],
-#         **kwargs
-#     ):
-#         raise RuntimeError("Model run failed.")
-
-# except Exception as e:  # Catch all exceptions to ensure cleanup
-#     print(f"[Launcher] Error: {e}")
-#     print(f"[Launcher] Full traceback: {traceback.format_exc()}")  # Log full error details
-# finally:  # Always execute cleanup, even if an error occurs
-#     try:
-#         server.shutdown()
-#         server.reset_terminal()
-#     except Exception as shutdown_error:
-#         print(f"[Launcher] Failed to shutdown MATLAB server: {shutdown_error}")
-#     sys.exit(1)
-
-
+kwargs.update({'params': params})
 result = run_icesee_with_server(
     icesee_model_data_assimilation(
     enkf_params["model_name"],

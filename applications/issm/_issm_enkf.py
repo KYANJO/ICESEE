@@ -16,8 +16,8 @@ from scipy.stats import multivariate_normal,norm
 
 # --- import utility functions ---
 from _issm_model import *
-# sys.path.insert(0, '../../config')
-# from _utility_imports import icesee_get_index
+sys.path.insert(0, '../../config')
+from _utility_imports import icesee_get_index
 
 # --- Forecast step ---
 def forecast_step_single(ensemble=None, **kwargs):
