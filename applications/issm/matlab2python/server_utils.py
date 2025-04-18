@@ -66,7 +66,7 @@ def setup_server_shutdown(server):
     log_message("Global SIGINT handler set up for server shutdown")
 
 
-def run_icesee_with_server(callable_func, server,shut_down_server=False):
+def run_icesee_with_server(callable_func, server,shut_down_server=False,comm=None,verbose=True):
     """Run the specified callable with the given server, handling errors and cleanup.
     
     Args:
@@ -95,7 +95,10 @@ def run_icesee_with_server(callable_func, server,shut_down_server=False):
 
     # Also log to stderr with forced flushing
     def log_message(message):
-        print(f"[Launcher] {message}", file=sys.stderr, flush=True)
+        rank = comm.Get_rank() if comm else 0
+        if rank == 0 and verbose:
+            # Only log to stderr if rank is 0
+            print(f"[Launcher] {message}", file=sys.stderr, flush=True)
         logging.debug(message)
 
     # Ensure Python output is unbuffered

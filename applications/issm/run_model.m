@@ -7,15 +7,13 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 		steps 			= double(kwargs.steps);
 		icesee_path     = char(kwargs.icesee_path);
 		data_path       = char(kwargs.data_path);
-		% dt 				= double(kwargs.dt);
-		% tinitial 		= double(kwargs.tinitial);
-		% tfinal 			= double(kwargs.tfinal);
-		% k = double(kwargs.k);  %time step
-		fprintf('[DEBUG-issm] Running the model from time: %f to %f at step %d\n', tinitial, tfinal, k);
+		rank 			= double(kwargs.rank);
+		
+		if rank == 0
+			fprintf('[ICESEE-ISSM] Running the model from time: %f to %f at step %d\n', tinitial, tfinal, k);
+		end
 	
 		%Solving #7
-		nprocs = 4;
-		rank = 0;
 		% filename = sprintf('ensemble_output_%d.h5', rank);
 		filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank))
 		if any(steps==7)
@@ -55,8 +53,6 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 			% load the preceding step #help loadmodel
 			% path is given by the organizer with the name of the given step
 			%->
-			%  check if we have gotten here
-			disp('[Debug] Running the model');
 			if k == 0 || isempty(k)
 				% load Boundary conditions from the inital conditions
 				md = loadmodel('./Models/ISMIP.BoundaryCondition');
@@ -114,35 +110,6 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 				fields = {'Vx', 'Vy', 'Vz', 'Pressure'};
 				result = md.results.TransientSolution(end);
 				save_ensemble_hdf5(filename, result, fields);
-			
-			% else
-			% 	% generating true state and wrong state we don't acess the time intergration loop
-			% 	% load Boundary conditions from the inital conditions
-			% 	md = loadmodel('./Models/ISMIP.BoundaryCondition');
-			% 	% time stepping parameters
-			% 	md.timestepping.time_step=dt;
-			% 	md.timestepping.start_time=tinitial;
-			% 	md.timestepping.final_time=tfinal;
-
-			% 	md.cluster=generic('name',cluster_name,'np',nprocs);
-			% 	% Set which control message you want to see #help verbose
-			% 	%->
-			% 	md.verbose=verbose('convergence',true);
-			% 	% set the transient model to ignore the thermal model
-			% 	% #md.transient
-			% 	%->
-			% 	md.transient.isthermal=0;
-
-			% 	md=solve(md,'Transient');
-			% 	% save the given model
-			% 	%->
-			% 	save ./Models/ISMIP.Transient md;
-
-			% 	% save these fields to a file for ensemble use
-			% 	fields = {'Vx', 'Vy', 'Vz', 'Pressure'};
-			% 	result = md.results.TransientSolution(end);
-			% 	save_ensemble_hdf5(filename, result, fields);
-
 			end
 	
 		end

@@ -54,6 +54,7 @@ model_kwargs = {
                 'tinitial': float(modeling_params.get('tinitial')),
                 'tfinal': float(modeling_params.get('num_years')),
                 't': np.linspace(modeling_params.get('tinitial'), modeling_params.get('num_years'), int((modeling_params.get('num_years') - modeling_params.get('tinitial'))/modeling_params.get('timesteps_per_year'))+1),
+                'nt': int((modeling_params.get('num_years') - modeling_params.get('tinitial'))/modeling_params.get('timesteps_per_year')),
                 'icesee_path': icesee_cwd,
                 'data_path': kwargs.get('data_path'),
                 'issm_dir': issm_dir,
@@ -75,7 +76,7 @@ shutil.copy(os.path.join(icesee_cwd, 'model_kwargs.mat'), issm_examples_dir)
 os.chdir(issm_examples_dir)
 
 # --- intialize the matlab server ---
-server = MatlabServer(verbose=1)
+server = MatlabServer(verbose=0)
 server.launch() # start the server
 
 # Set up global shutdown handler
@@ -109,7 +110,7 @@ if False:
             icesee_model_data_assimilation(
             enkf_params["model_name"],
             enkf_params["filter_type"],
-            **kwargs), server, True
+            **kwargs), server, True,icesee_comm,verbose=True
         )
     except Exception as e:
         print(f"[DEBUG] Error running the model: {e}")
@@ -126,5 +127,5 @@ else:
         icesee_model_data_assimilation(
         enkf_params["model_name"],
         enkf_params["filter_type"],
-        **kwargs), server, True
+        **kwargs), server, True,icesee_comm,verbose=0
     )
