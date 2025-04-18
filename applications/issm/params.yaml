@@ -8,7 +8,7 @@ physical-parameters:
   
 modeling-parameters:
   # Model parameters
-  num_years:  13         # number of years to run the model A: 5, F: 80
+  num_years:  12         # number of years to run the model A: 5, F: 80
   tinitial: 0.0           # initial time 
   timesteps_per_year: 4   # number of timesteps per year A: 0.5, F: 4
 

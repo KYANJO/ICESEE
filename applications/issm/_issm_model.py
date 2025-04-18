@@ -36,9 +36,9 @@ def initialize_model(physical_params, modeling_params, comm):
     icesee_path = modeling_params.get('icesee_path')
     data_path   = modeling_params.get('data_path')
     issm_cmd = f"run(\'issm_env\'); initialize_model({icesee_rank}, {icesee_size})"
-    result = run_icesee_with_server(lambda: server.send_command(issm_cmd),server)
-    if not result:
-        sys.exit(1)
+    result = run_icesee_with_server(lambda: server.send_command(issm_cmd),server,False)
+    # if not result:
+    #     sys.exit(1)
     
     # fetch model size from output file
     try: 
@@ -74,12 +74,33 @@ def ISSM_model(**kwargs):
     # --- copy run_model.m to the current directory
     shutil.copyfile(os.path.join(os.path.dirname(__file__), 'run_model.m'), 'run_model.m')
 
+    print(f"[DEBUG] Running ISSM model with nprocs: {nprocs}, k: {k}, dt: {dt}, tinitial: {tinitial}, tfinal: {tfinal}")
+    print(f" currnet working directory: {os.getcwd()}") 
     # --- call the run_model.m function ---
     server = kwargs.get('server')
-    cmd = f'run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal})'
-    result = run_icesee_with_server(lambda: server.send_command(cmd),server)
-    if not result:
-        sys.exit(1)
+    # try:
+    #     cmd = f"run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal})"
+    #     result = run_icesee_with_server(lambda: server.send_command(cmd),server)
+    #     if not result:
+    #         sys.exit(1)
+    # except Exception as e:
+    #     print(f"[DEBUG] Error sending command: {e}")
+    #     return None
+    try:
+        cmd = f"run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal})"
+        if not server.send_command(cmd):
+            print(f"[DEBUG] Error sending command: {cmd}")
+            return None
+    except Exception as e:
+        print(f"[DEBUG] Error sending command: {e}")
+    # finally: # Always execute cleanup, even if an error occurs
+    #     try:
+    #         server.shutdown()
+    #         server.reset_terminal()
+    #     except Exception as e:
+    #         print(f"[DEBUG] Error shutting down server: {e}")
+    #     sys.exit(1)
+
 
 # ---- Run model for ISSM ----
 def run_model(ensemble, **kwargs):

@@ -53,6 +53,7 @@ model_kwargs = {
                 'dt': float(modeling_params.get('timesteps_per_year')),
                 'tinitial': float(modeling_params.get('tinitial')),
                 'tfinal': float(modeling_params.get('num_years')),
+                't': np.linspace(modeling_params.get('tinitial'), modeling_params.get('num_years'), int((modeling_params.get('num_years') - modeling_params.get('tinitial'))/modeling_params.get('timesteps_per_year'))+1),
                 'icesee_path': icesee_cwd,
                 'data_path': kwargs.get('data_path'),
                 'issm_dir': issm_dir,
@@ -98,12 +99,32 @@ params.update({'nd': variable_size*params.get('total_state_param_vars')})
 os.chdir(icesee_cwd)
 
 # --- run the model ---
-kwargs.update({'params': params})
-result = run_icesee_with_server(
-    icesee_model_data_assimilation(
-    enkf_params["model_name"],
-    enkf_params["filter_type"],
-    **kwargs), server
-)
-if not result:
-    sys.exit(1)
+kwargs.update({'params': params, 
+               'server': server})
+
+
+if False:
+    try:
+        result = run_icesee_with_server(
+            icesee_model_data_assimilation(
+            enkf_params["model_name"],
+            enkf_params["filter_type"],
+            **kwargs), server, True
+        )
+    except Exception as e:
+        print(f"[DEBUG] Error running the model: {e}")
+        result = None
+    finally:
+        try:
+            server.shutdown()
+            server.reset_terminal()
+        except Exception as e:
+            print(f"[DEBUG] Error shutting down server: {e}")
+        sys.exit(1)
+else:
+    result = run_icesee_with_server(
+        icesee_model_data_assimilation(
+        enkf_params["model_name"],
+        enkf_params["filter_type"],
+        **kwargs), server, True
+    )
