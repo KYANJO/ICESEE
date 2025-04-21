@@ -1,9 +1,192 @@
+# ====================================================================
+# @author: Brian Kyanjo
+# @description: Matlab-python server launcher for ISSM model and other helper functions
+# @date: 2025-04-16
+# ====================================================================
+
 # --- Imports ---
 import os
 import sys
 import subprocess
 import numpy as np
+import time
+import signal
+import psutil
+import signal
+import platform
 
+class MatlabServer:
+    """A class to manage a MATLAB server for running ISSM models."""
+
+    def __init__(self, matlab_path="matlab", cmdfile="cmdfile.txt", statusfile="statusfile.txt",verbose=False):
+        """Initialize the MATLAB server configuration."""
+        self.matlab_path = matlab_path
+        self.cmdfile = os.path.abspath(cmdfile)
+        self.statusfile = os.path.abspath(statusfile)
+        self.process = None
+        self.verbose = verbose
+
+    def kill_matlab_processes(self):
+        matlab_count = 0
+        for proc in psutil.process_iter(['name', 'pid']):
+            try:
+                # Check for MATLAB processes (name varies by OS)
+                if 'matlab' in proc.info['name'].lower() or 'MATLAB' in proc.info['name']:
+                    print(f"Found MATLAB process: {proc.info['name']} (PID: {proc.info['pid']})")
+                    # Terminate the process
+                    if platform.system() == "Windows":
+                        proc.terminate()  # Windows uses terminate
+                    else:
+                        proc.send_signal(signal.SIGTERM)  # Unix uses SIGTERM
+                    matlab_count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+    
+        if matlab_count == 0:
+            print("No MATLAB processes found running.")
+        else:
+            print(f"Terminated {matlab_count} MATLAB process(es).")
+
+
+    def launch(self):
+        """Launch MATLAB server and wait for it to be ready."""
+        try:
+            self.kill_matlab_processes()
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            
+        if self.verbose:
+            print("[Launcher] Starting MATLAB server...")
+            print(f"[Launcher] Command file: {self.cmdfile}")
+            print(f"[Launcher] Status file: {self.statusfile}")
+            
+        # Clean up old files if they exist
+        for f in [self.cmdfile, self.statusfile]:
+            if os.path.exists(f):
+                os.remove(f)
+        
+        try:
+            # Launch MATLAB in background with redirected I/O
+            # matlab_cmd = f"{self.matlab_path} -nodesktop -nosplash -nojvm -r \"matlab_server('{self.cmdfile}', '{self.statusfile}, {int(self.verbose)}')\""
+            matlab_cmd = f"{self.matlab_path} -nodesktop -nosplash -nojvm -r \"matlab_server('{self.cmdfile}', '{self.statusfile}')\""
+            self.process = subprocess.Popen(
+                matlab_cmd,
+                shell=True,
+                stdout=subprocess.PIPE,  # Redirect stdout
+                stderr=subprocess.PIPE,  # Redirect stderr
+                stdin=subprocess.PIPE,   # Redirect stdin
+                preexec_fn=os.setsid    # Create new process group to handle signals
+            )
+            
+            # Wait for server to signal readiness
+            timeout = 10  # seconds
+            start_time = time.time()
+            while not os.path.exists(self.statusfile):
+                if time.time() - start_time > timeout:
+                    print("[Launcher] Error: MATLAB server failed to start within timeout.")
+                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                    sys.exit(1)
+                time.sleep(0.5)
+            
+            with open(self.statusfile, 'r') as f:
+                status = f.read().strip()
+            if status != 'ready':
+                print(f"[Launcher] Error: Unexpected status '{status}'.")
+                os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                sys.exit(1)
+            
+            if self.verbose:
+                print("[Launcher] MATLAB server is ready.")
+        except Exception as e:
+            print(f"[Launcher] Error launching MATLAB server: {e}")
+            if self.process:
+                os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            sys.exit(1)
+            
+
+    def send_command(self, command, timeout=300):
+        """Send a command to MATLAB and wait for it to be processed."""
+        if self.verbose:
+            print(f"[Launcher] Sending command: {command}")
+        with open(self.cmdfile, 'w') as f:
+            f.write(command)
+        
+        # Wait for command to be processed (file deleted)
+        start_time = time.time()
+        sleep_time = 0.2 # start fast and slow down
+        max_sleep  = 5.0 # don't sleep more than this
+        while os.path.exists(self.cmdfile):
+            elapsed_time = time.time() - start_time
+            if elapsed_time > timeout:
+                print("[Launcher] Error: Command execution timed out.")
+                return False
+            # if self.verbose:
+            #     print("[Launcher] Waiting for command to be processed...")
+            
+            time.sleep(sleep_time)
+
+            # adjust sleep time to slow down if needed up to max_sleep
+            # sleep_time = min(sleep_time * 1.5, max_sleep)
+            sleep_time = min(sleep_time + (elapsed_time / 10.0), max_sleep)
+            if sleep_time == max_sleep:
+                # step up the sleep time
+                # sleep_time = 0.2
+                print("[Launcher] Warning: Slow command processing detected.")
+        
+        print("[Launcher] Command processed successfully.")
+        return True
+
+    def shutdown(self):
+        """Attempt to gracefully shut down the MATLAB server."""
+        if self.verbose:
+            print("[Launcher] Attempting to shut down MATLAB server...")
+
+        if self.send_command("exit"):
+            try:
+                # Capture output to diagnose issues
+                stdout, stderr = self.process.communicate(timeout=5)
+                if self.verbose:
+                    if stdout:
+                        print("[MATLAB stdout]", stdout.decode())
+                    if stderr:
+                        print("[MATLAB stderr]", stderr.decode())
+                    print("[Launcher] MATLAB server shut down successfully.")
+            except subprocess.TimeoutExpired:
+                print("[Launcher] Warning: MATLAB process did not terminate in time, forcing termination.")
+                os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                self.process.wait(timeout=5)
+                if self.verbose:
+                    print("[Launcher] MATLAB server terminated.")
+        else:
+            print("[Launcher] Error: Failed to shut down MATLAB server gracefully.")
+            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            self.process.wait(timeout=5)
+            print("[Launcher] MATLAB server terminated.")
+    
+    def reset_terminal(self):
+        """Reset terminal settings to restore normal behavior, if applicable."""
+        if not sys.stdin.isatty() or any(key in os.environ for key in ["MPIEXEC", "OMPI_COMM_WORLD_RANK", "PMI_RANK", "SLURM_JOB_ID"]):
+            if self.verbose:
+                print("[Launcher] Skipping terminal reset (non-interactive or MPI environment).", file=sys.stderr, flush=True)
+            return
+        try:
+            subprocess.run(['stty', 'sane'], check=True)
+            if self.verbose:
+                print("[Launcher] Terminal settings reset successfully.", file=sys.stderr, flush=True)
+        except subprocess.CalledProcessError as e:
+            print(f"[Launcher] Warning: Failed to reset terminal settings: {e}", file=sys.stderr, flush=True)
+
+    # def reset_terminal(self):
+    #     """Reset terminal settings to restore normal behavior."""
+    #     try:
+    #         subprocess.run(['stty', 'sane'], check=True)
+    #         if self.verbose:
+    #             print("[Launcher] Terminal settings reset successfully.")
+    #     except subprocess.CalledProcessError:
+    #         print("[Launcher] Warning: Failed to reset terminal settings.")
+
+
+#  ---- end of MatlabServer class ----
 
 def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
     """
@@ -37,9 +220,10 @@ def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
                 print(stderr.strip())
 
         if process.returncode != 0:
-            raise subprocess.CalledProcessError(
-                process.returncode, issm_cmd, output=stdout, stderr=stderr
-            )
+            # raise subprocess.CalledProcessError(
+            #     process.returncode, issm_cmd, output=stdout, stderr=stderr
+            # )
+            raise subprocess.CalledProcessError(process.returncode, issm_cmd)
 
     except FileNotFoundError:
         print("❌ Error: MATLAB not found in PATH.")
@@ -51,6 +235,33 @@ def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
         
+#  --- Add ISSM_DIR to sys.path ---
+def add_issm_dir_to_sys_path(issm_dir=None):
+    """
+    Add ISSM_DIR and its subdirectories to sys.path.
+
+    Parameters:
+    - issm_dir: str or None
+        The ISSM directory path. If None, it tries to get from environment variable 'ISSM_DIR'.
+    """
+
+    import os
+    import sys
+
+    if issm_dir is None:
+        issm_dir = os.environ.get('ISSM_DIR')
+
+    if not issm_dir:
+        raise EnvironmentError("ISSM_DIR is not set. Please set the ISSM_DIR environment variable.")
+
+    if not os.path.isdir(issm_dir):
+        raise FileNotFoundError(f"The ISSM_DIR directory does not exist: {issm_dir}")
+
+    for root, dirs, _ in os.walk(issm_dir):
+        sys.path.insert(0, root)
+
+    print(f"[ICESEE] Added ISSM directory and subdirectories from path: {issm_dir}")
+
 
 # --- MATLAB Engine Initialization ---
 # MATLAB Engine Initialization

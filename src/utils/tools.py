@@ -11,6 +11,7 @@ import time
 import subprocess
 import h5py
 import numpy as np
+import logging
 from mpi4py import MPI
 
 # Function to safely change directory
@@ -224,6 +225,7 @@ def icesee_get_index(vec, **kwargs):
 
     local_size_per_rank = kwargs.get('dim_list', None)
     return var_indices, index_map, local_size_per_rank[rank]
+# ==============================================================================
 
 # Refined ANSI color codes
 COLORS = {
@@ -251,8 +253,39 @@ def format_time(seconds: float) -> str:
     millis = int((seconds % 1) * 1000)
     return f"{days:02d}:{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
 
+def setup_logger(log_file: str = "icesee_timing.log"):
+    """Set up a logger for timing output."""
+    logger = logging.getLogger("ICESEE_Timing")
+    logger.setLevel(logging.INFO)
+    
+    # Avoid duplicate handlers
+    if not logger.handlers:
+        # File handler for logging to a file
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(file_handler)
+        
+        # Optional: Stream handler for console output (only for root process)
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        if rank == 0:
+            stream_handler = logging.StreamHandler(sys.stderr)  # Use stderr to avoid stdout issues
+            stream_handler.setFormatter(logging.Formatter("%(message)s"))
+            logger.addHandler(stream_handler)
+    
+    return logger
+
 def display_timing(computational_time: float, wallclock_time: float) -> None:
-    """Display computational and wall-clock times with perfectly aligned formatting."""
+    """Display computational and wall-clock times with perfectly aligned formatting using logging."""
+    # Set up logger
+    logger = setup_logger()
+    
+    # Only log from the root MPI process
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    if rank != 0:
+        return  # Non-root processes exit silently
+
     # Formatted time strings
     comp_time_str = format_time(computational_time)
     wall_time_str = format_time(wallclock_time)
@@ -272,20 +305,20 @@ def display_timing(computational_time: float, wallclock_time: float) -> None:
     
     # Pad lines to exact width, ensuring no extra spaces
     def pad_line(text: str) -> str:
-        padding = " " * (max_content_width - len(text)+6+4)
+        padding = " " * (max_content_width - len(text) + 6 + 4)
         return f"{COLORS['GRAY']}║ {text}{padding} ║{COLORS['RESET']}"
     
     def pad_line_comp(text: str) -> str:
-        padding = " " * (max_content_width - len(text)+7+4)
+        padding = " " * (max_content_width - len(text) + 7 + 4)
         return f"{COLORS['GRAY']}║ {text}{padding} ║{COLORS['RESET']}"
     
     def pad_line_wall(text: str) -> str:
-        padding = " " * (max_content_width - len(text)+5+4)
+        padding = " " * (max_content_width - len(text) + 5 + 4)
         return f"{COLORS['GRAY']}║ {text}{padding} ║{COLORS['RESET']}"
     
-    # Output with strict alignment
-    print(f"\n{header}")
-    print(f"{COLORS['CYAN']}{pad_line(title)}{COLORS['RESET']}")
-    print(f"{COLORS['GREEN']}{pad_line_comp(comp_line)}{COLORS['RESET']}")
-    print(f"{COLORS['MAGENTA']}{pad_line_wall(wall_line)}{COLORS['RESET']}")
-    print(footer, flush=True)  # No '\n' after footer to avoid extra line
+    # Log with strict alignment
+    logger.info(f"\n{header}")
+    logger.info(f"{COLORS['CYAN']}{pad_line(title)}{COLORS['RESET']}")
+    logger.info(f"{COLORS['GREEN']}{pad_line_comp(comp_line)}{COLORS['RESET']}")
+    logger.info(f"{COLORS['MAGENTA']}{pad_line_wall(wall_line)}{COLORS['RESET']}")
+    logger.info(footer)

@@ -17,7 +17,7 @@ from scipy.stats import multivariate_normal, beta
 # seed the random number generator
 np.random.seed(0)
 
-def parallel_write_ensemble_scattered(timestep, ensemble_mean, params, ensemble_chunk, comm, model_kwargs, output_file="ensemble_data.h5"):
+def parallel_write_ensemble_scattered(timestep, ensemble_mean, params, ensemble_chunk, comm, model_kwargs, output_file="icesee_ensemble_data.h5"):
     """
     Write ensemble data in parallel using h5py and MPI
     ensemble_chunk: local data on each rank with shape (local_nd, Nens)
@@ -161,7 +161,7 @@ def parallel_write_ensemble_scattered(timestep, ensemble_mean, params, ensemble_
 
 
             # =================
-            if True:
+            if False:
                 ndim = ensemble_chunk.shape[0] // params["total_state_param_vars"]
                 state_block_size = ndim*params["num_state_vars"]
                 param_size = ensemble_chunk.shape[0] - state_block_size
@@ -269,7 +269,7 @@ def parallel_write_data_from_root_2D(full_ensemble=None, comm=None, data_name=No
         dset[offset:offset + local_nd, :] = local_chunk
 
     
-def parallel_write_full_ensemble_from_root(timestep, ensemble_mean, params,full_ensemble=None, comm=None, output_file="ensemble_data.h5"):
+def parallel_write_full_ensemble_from_root(timestep, ensemble_mean, params,full_ensemble=None, comm=None, output_file="icesee_ensemble_data.h5"):
     """
     Append ensemble data in parallel where the full matrix exists on rank 0.
     Each call appends a new time step, resulting in a dataset of shape (nd, Nens, nt).
@@ -407,15 +407,15 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, d, model_kwargs,UtilsFunctions):
     H = UtilsFunctions(params, ensemble_vec).JObs_fun(ensemble_vec.shape[0]) # mxNens, observation operator
 
     # -- get ensemble pertubations
-    # ensemble_perturbations = ensemble_vec - np.mean(ensemble_vec, axis=1).reshape(-1,1)
+    ensemble_perturbations = ensemble_vec - np.mean(ensemble_vec, axis=1).reshape(-1,1)
     
     # ----parallelize this step
     Eta = np.zeros((d.shape[0], Nens)) # mxNens, ensemble pertubations
-    # Eta = np.dot(H, ensemble_perturbations) # mxNens, ensemble pertubations
+    Eta = np.dot(H, ensemble_perturbations) # mxNens, ensemble pertubations
     D   = np.zeros_like(Eta) # mxNens #virtual observations
     HA  = np.zeros_like(D)
     for ens in range(Nens):
-        Eta[:,ens] = np.random.multivariate_normal(mean=np.zeros(d.shape[0]), cov=Cov_obs) 
+        # Eta[:,ens] = np.random.multivariate_normal(mean=np.zeros(d.shape[0]), cov=Cov_obs) 
         D[:,ens] = d + Eta[:,ens]
         HA[:,ens] = np.dot(H, ensemble_vec[:,ens])
     # ---------------------------------------
@@ -597,7 +597,7 @@ def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij
         # --- scatter ensemble_vec to all processors ---
         scatter_ensemble = BM.scatter(ensemble_vec, comm_world)
         # -* instead of using scattter from root, if the ensemble vec doesn't fit in memory then
-        # with h5py.File("ensemble_data.h5", 'r', driver='mpio', comm=comm_world) as f:
+        # with h5py.File("icesee_ensemble_data.h5", 'r', driver='mpio', comm=comm_world) as f:
         #     scatter_ensemble = f['ensemble']
         #     total_rows = scatter_ensemble.shape[0]
 
@@ -616,8 +616,18 @@ def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij
         state_block_size = ndim*params["num_state_vars"]
         # analysis_vec[state_block_size:,:] /= 10
         # analysis_vec[state_block_size:,:] *= (smb_scale)  # Scale SMB after analysis
-        # params['inflation_factor'] = 1.4
-        analysis_vec[state_block_size:,:] = UtilsFunctions(params,  analysis_vec[state_block_size:,:]).inflate_ensemble(in_place=True)
+        params['inflation_factor'] = 1.15
+        # analysis_vec = UtilsFunctions(params,  analysis_vec).inflate_ensemble(in_place=True)
+        # ---> multiplicative inflation
+        mean_params = np.mean(analysis_vec[state_block_size:,:], axis=1)
+        #  compute parturbations
+        pertubations = analysis_vec[state_block_size:,:] - mean_params.reshape(-1,1)
+        # apply the inflation factor
+        inflated_pertubations = pertubations * params['inflation_factor']
+
+        # update the analysis vector
+        analysis_vec[state_block_size:,:] = mean_params.reshape(-1,1) + inflated_pertubations
+
 
         # check for negative thicknes and set to 1e-3 if vec_input contains h
         for i, var in enumerate(model_kwargs.get("vec_inputs",[])):

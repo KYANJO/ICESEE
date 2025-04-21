@@ -32,8 +32,7 @@ def get_project_root():
 # Get the root of the project
 project_root = get_project_root()
 
-# Construct the path to 'src/models' from the project root
-models_dir = os.path.join(project_root, 'src', 'models')
+# Construct the path to 'src' from the project ro
 utils_dir = os.path.join(project_root, 'src', 'utils')
 run_model_da_dir = os.path.join(project_root, 'src', 'run_model_da')
 config_loader_dir = os.path.join(project_root, 'config')
@@ -41,7 +40,7 @@ applications_dir = os.path.join(project_root, 'applications')
 parallelization_dir = os.path.join(project_root, 'src', 'parallelization')
 
 # Insert the models directory at the beginning of sys.path
-sys.path.insert(0, models_dir)
+# sys.path.insert(0, models_dir)
 sys.path.insert(0, utils_dir)
 sys.path.insert(0, run_model_da_dir)
 sys.path.insert(0, config_loader_dir)
@@ -127,7 +126,7 @@ if not flag_jupyter:
 
     # --- Ensemble Parameters ---
     params.update({
-        "nt": int(float(modeling_params["num_years"])) * int(float(modeling_params["timesteps_per_year"])),
+        "nt": int(float(modeling_params["num_years"])) * int(float(modeling_params["timesteps_per_year"])), # number of time steps
         "dt": 1.0 / float(modeling_params["timesteps_per_year"]),
         "num_state_vars": int(float(enkf_params.get("num_state_vars", 1))),
         "num_param_vars": int(float(enkf_params.get("num_param_vars", 0))),
@@ -140,6 +139,8 @@ if not flag_jupyter:
         "parallel_flag": enkf_params.get("parallel_flag", "serial"),
         "n_modeltasks": int(enkf_params.get("n_modeltasks", 1)),
         "execution_flag": int(enkf_params.get("execution_flag", 0)),
+        "data_path": enkf_params.get("data_path",  "/_modelrun_datasets"),
+        "model_name": enkf_params.get("model_name", "model"),
     })
 
     # --- incase CL args not provided ---
@@ -176,6 +177,8 @@ if not flag_jupyter:
     # model kwargs
     kwargs = {
         "t": params["t"],
+        "nt": params["nt"],
+        "dt": params["dt"],
         "obs_index": (np.linspace(int(params["freq_obs"]/params["dt"]), \
                             int(params["obs_max_time"]/params["dt"]), int(params["number_obs_instants"]))).astype(int),
         "joint_estimation": bool(enkf_params.get("joint_estimation", False)),
@@ -187,7 +190,12 @@ if not flag_jupyter:
         "observed_params":enkf_params.get("observed_params", []),
         "verbose":_verbose,
         "param_ens_spread": enkf_params.get("param_ens_spread", []),
+        "data_path": params["data_path"],
+        'example_name': modeling_params.get('example_name', params.get('model_name')),
+        'length_scale': enkf_params.get("length_scale", 1.0),
+        'Q_rho': enkf_params.get("Q_rho", 1.0),
     }
+
 
     if kwargs["joint_estimation"]:
         params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
@@ -207,7 +215,6 @@ if not flag_jupyter:
 
     # --- Observations Parameters ---
     obs_t, obs_idx, num_observations = UtilsFunctions(params).generate_observation_schedule(**kwargs)
-    # print(obs_t)
     kwargs["obs_index"] = obs_idx
     params["number_obs_instants"] = num_observations
     kwargs["parallel_flag"]       = enkf_params.get("parallel_flag", "serial")
@@ -220,3 +227,6 @@ if not flag_jupyter:
             params_vec.append(vars)
 
     kwargs["params_vec"] = params_vec
+
+    # update kwargs dictonary with params
+    kwargs.update({'params': params})
