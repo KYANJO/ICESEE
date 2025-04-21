@@ -14,11 +14,13 @@ os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["PETSC_CONFIGURE_OPTIONS"] = "--download-mpich-device=ch3:sock"
 
 # from mpi4py import MPI
+import firedrake
 from firedrake.petsc import PETSc
 
 # --- Utility imports ---
 sys.path.insert(0, '../../../config')
-from _utility_imports import * # contains params, kwargs, modeling_params, enkf_params, physical_params 
+from _utility_imports import * #imports all the necessary modules
+# from _utility_imports import params, kwargs, modeling_params, enkf_params, physical_params
 applications_dir = os.path.join(project_root, 'applications','icepack_model')
 sys.path.insert(0, applications_dir)
 
@@ -55,8 +57,14 @@ kwargs.update({"a":a, "h0":h0, "u0":u0, "C":C, "A":A,"Q":Q,"V":V, "da":float(mod
         "a_p":a_p, "b_in":b_in, "b_out":b_out,
 })
 
+# --- nurged smb
+a_in = firedrake.Constant(kwargs["a_in_p"])
+da_p = firedrake.Constant(kwargs["da_p"])
+a_nuged = firedrake.interpolate(a_in + da_p*kwargs["x"]/kwargs["Lx"], kwargs["Q"])
+kwargs.update({"a_nuged":a_nuged})
+
 # --- Run Data Assimilation ---
-kwargs.update({"params": params}) # update the kwargs with the parameters
+kwargs.update({'params': params}) # update the kwargs with the parameters
 
 PETSc.Sys.Print("Data assimilation with ICESEE ...")
 icesee_model_data_assimilation(
