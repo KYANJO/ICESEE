@@ -56,7 +56,7 @@ class UtilsFunctions:
             # parameters are not required to observe the state variables
             num_params_size = n - state_variables_size
             H_param = np.zeros(num_params_size)
-            H[:,state_variables_size:] = H_param
+            # H[:,state_variables_size:] = H_param
             
         return H
 

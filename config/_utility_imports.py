@@ -192,7 +192,10 @@ if not flag_jupyter:
         "param_ens_spread": enkf_params.get("param_ens_spread", []),
         "data_path": params["data_path"],
         'example_name': modeling_params.get('example_name', params.get('model_name')),
+        'length_scale': enkf_params.get("length_scale", 1.0),
+        'Q_rho': enkf_params.get("Q_rho", 1.0),
     }
+
 
     if kwargs["joint_estimation"]:
         params["total_state_param_vars"] = params["num_state_vars"] + params["num_param_vars"]
@@ -212,7 +215,6 @@ if not flag_jupyter:
 
     # --- Observations Parameters ---
     obs_t, obs_idx, num_observations = UtilsFunctions(params).generate_observation_schedule(**kwargs)
-    # print(obs_t)
     kwargs["obs_index"] = obs_idx
     params["number_obs_instants"] = num_observations
     kwargs["parallel_flag"]       = enkf_params.get("parallel_flag", "serial")
