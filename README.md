@@ -5,9 +5,21 @@ Ice Sheet State and Parameter Estimator (ICESEE) model is a state-of-the-art dat
 This design is being extended to integrate with cloud computing services such as **AWS**, ensuring scalability and efficiency for larger simulations. Eventually, the software will be incorporated into the **GHUB online ice sheet platform**, significantly enhancing its capabilities by including the new features currently under development.
 
 ---
+## Installation
 
+```bash
+pip install ICESEE
+```
 ## **Usage**
 
+---
+
+##  Build the Package
+Make sure you have **setuptools**, **wheel**, and **twine** installed:
+
+```bash
+pip install setuptools wheel twine
+```
 The supported applications are located in the [applications](./applications) directory and currently include:
 - **[Flowline](./applications/flowline/)**
 - **[Icepack](./applications/icepack/)**
@@ -22,7 +34,7 @@ Icepack applications can now be run in containers using both **Apptainer** and *
 Each application includes either a Python script or a Jupyter notebook for execution. Detailed documentation for these scripts and notebooks is included in the README files in each application folder. The documentation and full implementation of flowline model is forthcoming.
 
 Both  **Icepack** and **Lorenz-96** applications support four variants of the Ensemble Kalman Filter for data assimilation:
-1. **ENEnKF**: Stochastic Ensemble Kalman Filter
+1. **EnKF**: Stochastic Ensemble Kalman Filter
 2. **DEnKF**: Deterministic Ensemble Kalman Filter
 3. **EnTKF**: Ensemble Transform Kalman Filter
 4. **EnRSKF**: Ensemble Square Root Kalman Filter

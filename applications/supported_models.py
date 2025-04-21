@@ -1,7 +1,7 @@
 # =============================================================================
 # @author: Brian Kyanjo
 # @date: 2025-01-17
-# @description: Add or remove models to be supported by the application here.
+# @description: Add (register) or remove models to be supported by the application here.
 #               Currently supported models include:
 #               - icepack
 #               - Lorenz96
@@ -24,8 +24,13 @@ class SupportedModels:
     # Dictionary mapping model names to their respective import paths and states
     MODEL_CONFIG = {
         "icepack": {
-            "module": "icepack_model.icepack_enkf",
+            "module": "icepack_model._icepack_enkf",
             "description": "Icepack model",
+            "status": "supported",
+        },
+        "issm": {
+            "module": "issm._issm_enkf",
+            "description": "ISSM model",
             "status": "supported",
         },
         "lorenz96": {
@@ -34,13 +39,8 @@ class SupportedModels:
             "status": "supported",
         },
         "flowline": {
-            "module": "flowline.flowline_enkf",
+            "module": "flowline._flowline_enkf",
             "description": "Flowline model",
-            "status": "development",
-        },
-        "issm": {
-            "module": "issm.issm_enkf",
-            "description": "ISSM model",
             "status": "development",
         },
     }
@@ -89,7 +89,7 @@ class SupportedModels:
         try:
             # Dynamically import the model 
             model_module = importlib.import_module(model_info["module"])
-            print(f"Successfully loaded {model_info['description']} from {model_info['module']}.")
+            # print(f"Successfully loaded {model_info['description']} from {model_info['module']}.")
             return model_module
         except ImportError as e:
             raise ImportError(f"Failed to import module for model '{self.model}': {e}")
