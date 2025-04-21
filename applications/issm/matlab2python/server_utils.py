@@ -15,7 +15,7 @@ _global_server = None
 _server_shutdown = False
 _signal_handler_set = False  # Track if signal handler is set
 
-def setup_server_shutdown(server):
+def setup_server_shutdown(server,comm,verbose=False):
     """Set up global server reference and SIGINT handler for cleanup on KeyboardInterrupt."""
     global _global_server, _server_shutdown, _signal_handler_set
     if _signal_handler_set:
@@ -36,8 +36,13 @@ def setup_server_shutdown(server):
     )
 
     def log_message(message):
-        print(f"[Launcher] {message}", file=sys.stderr, flush=True)
-        logging.debug(message)
+        rank = comm.Get_rank() if comm else 0
+        if rank == 0 and verbose:
+            # Only log to stderr if rank is 0
+            print(f"[Launcher] {message}", file=sys.stderr, flush=True)
+            logging.debug(message)
+        else:
+            return None
 
     # Signal handler for SIGINT
     def signal_handler(sig, frame):
@@ -99,7 +104,9 @@ def run_icesee_with_server(callable_func, server,shut_down_server=False,comm=Non
         if rank == 0 and verbose:
             # Only log to stderr if rank is 0
             print(f"[Launcher] {message}", file=sys.stderr, flush=True)
-        logging.debug(message)
+            logging.debug(message)
+        else:
+            return None
 
     # Ensure Python output is unbuffered
     os.environ["PYTHONUNBUFFERED"] = "1"
@@ -134,20 +141,25 @@ def run_icesee_with_server(callable_func, server,shut_down_server=False,comm=Non
     finally:
         # Determine if shutdown is required
         should_shutdown = not (success and not shut_down_server)
-        log_message(f"Shutdown decision: should_shutdown={should_shutdown}, success={success}, shut_down_server={shut_down_server}")
+        if verbose:
+            log_message(f"Shutdown decision: should_shutdown={should_shutdown}, success={success}, shut_down_server={shut_down_server}")
 
         if should_shutdown:
-            log_message("Attempting to shut down MATLAB server within run_icesee_with_server")
+            if verbose:
+                log_message("Attempting to shut down MATLAB server within run_icesee_with_server")
             try:
                 server.shutdown()
                 _server_shutdown = True
                 # Skip reset_terminal in non-interactive or MPI environments
                 mpi_env_vars = ["MPIEXEC", "OMPI_COMM_WORLD_RANK", "PMI_RANK", "SLURM_JOB_ID"]
                 if sys.stdin.isatty() and not any(key in os.environ for key in mpi_env_vars):
-                    log_message("Calling reset_terminal within run_icesee_with_server")
+                    if verbose:
+                        log_message("Calling reset_terminal within run_icesee_with_server")
                     server.reset_terminal()
                 else:
-                    log_message("Skipping reset_terminal within run_icesee_with_server (non-interactive or MPI environment)")
+                    if verbose:
+                        log_message("Skipping reset_terminal within run_icesee_with_server (non-interactive or MPI environment)")
             except Exception as shutdown_error:
                 log_message(f"Failed to shutdown MATLAB server within run_icesee_with_server: {shutdown_error}")
-        log_message("Exiting run_icesee_with_server")
+        if verbose:
+            log_message("Exiting run_icesee_with_server")

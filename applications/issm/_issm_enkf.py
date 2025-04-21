@@ -27,7 +27,8 @@ def forecast_step_single(ensemble=None, **kwargs):
     #  -- control time stepping   
     # k = kwargs.get('k')
     time = kwargs.get('t')
-    k = kwargs.get('t_indx')
+    k    = kwargs.get('k')
+    
     kwargs.update({'tinitial': time[k], 'tfinal': time[k+1]})
 
     #  call the run_model fun to push the state forward in time
@@ -45,6 +46,7 @@ def generate_true_state(**kwargs):
     issm_examples_dir   = kwargs.get('issm_examples_dir')
     icesee_path         = kwargs.get('icesee_path')
     data_path           = kwargs.get('data_path')
+    comm                = kwargs.get('comm')
 
     #  --- change directory to the issm directory ---
     os.chdir(issm_examples_dir)
@@ -64,7 +66,7 @@ def generate_true_state(**kwargs):
             if not os.path.exists(output_filename):
                 print(f"[ERROR] File does not exist: {output_filename}")
                 return None
-            with h5py.File(output_filename, 'r') as f:
+            with h5py.File(output_filename, 'r', driver='mpio', comm=comm) as f:
                 # -- fetch state variables
                 statevec_true[indx_map["Vx"],0] = f['Vx'][0]
                 statevec_true[indx_map["Vy"],0] = f['Vy'][0]
@@ -83,7 +85,7 @@ def generate_true_state(**kwargs):
             # print(f"[DEBUG] In generate_true_state: finished running the model")
             try:
                 output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
-                with h5py.File(output_filename, 'r') as f:
+                with h5py.File(output_filename, 'r', driver='mpio', comm=comm) as f:
                     # return {
                     # 'Vx': f['Vx'][0],
                     # 'Vy': f['Vy'][0],
@@ -125,6 +127,7 @@ def generate_nurged_state(**kwargs):
     issm_examples_dir   = kwargs.get('issm_examples_dir')
     icesee_path         = kwargs.get('icesee_path')
     data_path           = kwargs.get('data_path')
+    comm                = kwargs.get('comm')
 
     #  --- change directory to the issm directory ---
     os.chdir(issm_examples_dir)
@@ -144,7 +147,7 @@ def generate_nurged_state(**kwargs):
             if not os.path.exists(output_filename):
                 print(f"[ERROR] File does not exist: {output_filename}")
                 return None
-            with h5py.File(output_filename, 'r') as f:
+            with h5py.File(output_filename, 'r', driver='mpio', comm=comm) as f:
                 # -- fetch state variables
                 statevec_nurged[indx_map["Vx"],0] = f['Vx'][0]
                 statevec_nurged[indx_map["Vy"],0] = f['Vy'][0]
@@ -163,7 +166,7 @@ def generate_nurged_state(**kwargs):
             # print(f"[DEBUG] In generate_true_state: finished running the model")
             try:
                 output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
-                with h5py.File(output_filename, 'r') as f:
+                with h5py.File(output_filename, 'r', driver='mpio', comm=comm) as f:
                     statevec_nurged[indx_map["Vx"],k+1] = f['Vx'][0]
                     statevec_nurged[indx_map["Vy"],k+1] = f['Vy'][0]
                     statevec_nurged[indx_map["Vz"],k+1] = f['Vz'][0]
@@ -180,7 +183,8 @@ def generate_nurged_state(**kwargs):
         #  --- change directory back to the original directory ---
         os.chdir(icesee_path)
         
-        return updated_state
+        # return updated_state
+        return statevec_nurged
     
     except Exception as e:
         print(f"[DEBUG] Error sending command: {e}")
@@ -201,27 +205,33 @@ def initialize_ensemble(ens, **kwargs):
     issm_examples_dir   = kwargs.get('issm_examples_dir')
     icesee_path         = kwargs.get('icesee_path')
     data_path           = kwargs.get('data_path')
+    comm                = kwargs.get('comm')
 
     #  --- change directory to the issm directory ---
     os.chdir(issm_examples_dir)
-
+   
     try:
         output_filename = f'{icesee_path}{data_path}/ensemble_init_{rank}.h5'
-        with h5py.File(output_filename, 'r') as f:
-            return {
-            'Vx': f['Vx'][0],
-            'Vy': f['Vy'][0],
-            'Vz': f['Vz'][0],
-            'Pressure': f['Pressure'][0]
-            }
-        # --- change directory back to the original directory ---
+        with h5py.File(output_filename, 'r', driver='mpio', comm=comm) as f:
+            # --- fetch state variables
+            Vx = f['Vx'][0]
+            Vy = f['Vy'][0]
+            Vz = f['Vz'][0]
+            Pressure = f['Pressure'][0]
+
+        updated_state = {'Vx': Vx,
+                        'Vy': Vy,
+                        'Vz': Vz,
+                        'Pressure': Pressure}
         os.chdir(icesee_path)
+
+        return updated_state
         
     except Exception as e:
-        print(f"[DEBUG] Error sending command: {e}")
+        print(f"[Initialze_ensemble] Error sending command: {e}")
         server.shutdown()
         server.reset_terminal()
         sys.exit(1)
     
-    # --- change directory back to the original directory ---
-    os.chdir(icesee_path)
+    # # --- change directory back to the original directory ---
+    # os.chdir(icesee_path)

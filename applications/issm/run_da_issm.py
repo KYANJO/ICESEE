@@ -16,7 +16,7 @@ import scipy.io as sio
 # --- Configuration ---
 sys.path.insert(0, '../../config')
 from _utility_imports import *
-from _utility_imports import params, kwargs, modeling_params, enkf_params, physical_params
+from _utility_imports import params, kwargs, modeling_params, enkf_params, physical_params,UtilsFunctions
 from run_models_da import icesee_model_data_assimilation
 from matlab2python.mat2py_utils import  add_issm_dir_to_sys_path, MatlabServer
 from matlab2python.server_utils import run_icesee_with_server, setup_server_shutdown
@@ -63,6 +63,11 @@ model_kwargs = {
                 'nprocs': icesee_size,
 }
 
+# observation schedule
+obs_t, obs_idx, num_observations = UtilsFunctions(params).generate_observation_schedule(**model_kwargs)
+model_kwargs["obs_index"] = obs_idx
+params["number_obs_instants"] = num_observations
+
 # --- save model kwargs to file and update Icesee kwargs ---
 sio.savemat('model_kwargs.mat', model_kwargs)
 kwargs.update(model_kwargs)
@@ -80,20 +85,22 @@ server = MatlabServer(verbose=0)
 server.launch() # start the server
 
 # Set up global shutdown handler
-setup_server_shutdown(server)
+setup_server_shutdown(server, icesee_comm, verbose=False)
 
 # --- intialize ISSM model ---
 modeling_params.update({'server': server, 
                         'icesee_path': icesee_cwd,
                         'data_path': kwargs.get('data_path')})
-if icesee_rank == 0:
-    variable_size = initialize_model(physical_params, modeling_params, icesee_comm)
-else:
-    variable_size = 0.0
+# if icesee_rank == 0:
+#     variable_size = initialize_model(physical_params, modeling_params, icesee_comm)
+# else:
+#     variable_size = 0.0
 
-# wait for rank 0 to write to file before proceeding
-icesee_comm.Barrier()
-variable_size = icesee_comm.bcast(variable_size, root=0)
+# # wait for rank 0 to write to file before proceeding
+# icesee_comm.Barrier()
+# variable_size = icesee_comm.bcast(variable_size, root=0)
+
+variable_size = initialize_model(physical_params, modeling_params, icesee_comm)
 params.update({'nd': variable_size*params.get('total_state_param_vars')})
 
 # --- change directory back to the original directory ---
@@ -127,5 +134,8 @@ else:
         icesee_model_data_assimilation(
         enkf_params["model_name"],
         enkf_params["filter_type"],
-        **kwargs), server, True,icesee_comm,verbose=0
+        **kwargs), server, False,icesee_comm,verbose=False
     )
+    # server.kill_matlab_processes()
+#     print("Checking stdout:", sys.stdout, file=sys.stderr)  # Use stderr to avoid stdout issues
+# sys.stdout.flush()

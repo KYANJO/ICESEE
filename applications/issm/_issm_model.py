@@ -47,7 +47,7 @@ def initialize_model(physical_params, modeling_params, comm):
         if not os.path.exists(output_filename):
             print(f"[ERROR] File does not exist: {output_filename}")
             return None
-        with h5py.File(output_filename, 'r') as f:
+        with h5py.File(output_filename, 'r', driver='mpio', comm=comm) as f:
             Vx = f['Vx'][0]
             # get the size of the Vx variable
             nd = Vx.shape[0]
@@ -65,11 +65,18 @@ def ISSM_model(**kwargs):
     """
 
     # --- get the number of processors ---
-    nprocs = kwargs.get('nprocs')
+    # nprocs = kwargs.get('nprocs')
     k = kwargs.get('k')
     dt = kwargs.get('dt')
     tinitial = kwargs.get('tinitial')
     tfinal = kwargs.get('tfinal')
+    # rank = kwargs.get('rank')
+    color = kwargs.get('color')
+    comm = kwargs.get('comm')
+
+    # get rank
+    rank   = comm.Get_rank()
+    nprocs = comm.Get_size()
 
     # --- copy run_model.m to the current directory
     shutil.copyfile(os.path.join(os.path.dirname(__file__), 'run_model.m'), 'run_model.m')
@@ -79,7 +86,7 @@ def ISSM_model(**kwargs):
     server = kwargs.get('server')
 
     try:
-        cmd = f"run(\'issm_env\'); run_model({nprocs},{k},{dt},{tinitial},{tfinal})"
+        cmd = f"run(\'issm_env\'); run_model({color},{rank},{nprocs},{k},{dt},{tinitial},{tfinal})"
         if not server.send_command(cmd):
             print(f"[DEBUG] Error sending command: {cmd}")
             return None
@@ -102,16 +109,19 @@ def run_model(ensemble, **kwargs):
     # --- get the number of processors ---
     nprocs = kwargs.get('nprocs')
     server              = kwargs.get('server')
-    rank                = kwargs.get('rank')
+    # rank                = kwargs.get('rank')
     issm_examples_dir   = kwargs.get('issm_examples_dir')
     icesee_path         = kwargs.get('icesee_path')
+    comm                = kwargs.get('comm')
+
+    rank                = comm.Get_rank()
 
     #  --- change directory to the issm directory ---
     os.chdir(issm_examples_dir)
 
-    try: 
+    # try: 
+    if True:
         # Generate output filename based on rank
-        # input_filename = f'ensemble_output_{rank}.h5'
         icesee_path = kwargs.get('icesee_path')
         data_path = kwargs.get('data_path')
         input_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
@@ -120,23 +130,12 @@ def run_model(ensemble, **kwargs):
         k = kwargs.get('k')
 
         # -- call teh icess_get_index function to get the index of the ensemble
-        print(f"[DEBUG] Ensemble shape: {ensemble.shape}")
-        print(f"[DEBUG] Ensemble: {ensemble[:5]}")
+        print(f"[DEBUG] run_model {rank} of {comm.Get_size()}")
+        # print(f"[DEBUG] Ensemble: {ensemble[:5]}")
         vecs, indx_map, _ = icesee_get_index(ensemble, **kwargs)
 
         if k > 0:
             # -- create our ensemble for test purposes
-            #  read from input file for now
-            # with h5py.File(input_filename, 'r') as f:
-            #     Vx = f['Vx'][:]
-            #     Vy = f['Vy'][:]
-            #     Vz = f['Vz'][:]
-            #     Pressure = f['Pressure'][:]
-            # ndim = ensemble.shape[0] // 4
-            # Vx = ensemble[0:ndim]
-            # Vy = ensemble[ndim:2*ndim]
-            # Vz = ensemble[2*ndim:3*ndim]
-            # Pressure = ensemble[3*ndim:4*ndim]
             Vx = ensemble[indx_map["Vx"]]
             Vy = ensemble[indx_map["Vy"]]
             Vz = ensemble[indx_map["Vz"]]
@@ -144,13 +143,13 @@ def run_model(ensemble, **kwargs):
             # -> fetch the vx, vy, vz, and pressure from the ensemble
             
             # -----
-            with h5py.File(input_filename, 'w') as f:
+            with h5py.File(input_filename, 'w', driver='mpio', comm=comm) as f:
                 # f.create_dataset('ensemble', data=ensemble)
                 f.create_dataset('Vx', data=Vx)
                 f.create_dataset('Vy', data=Vy)
                 f.create_dataset('Vz', data=Vz)
                 f.create_dataset('Pressure', data=Pressure)
-            print(f"[HDF5] Saved: {input_filename}")
+            # print(f"[HDF5] Saved: {input_filename}")
 
         # --- call the issm model  to update the state and parameters variables ---
         ISSM_model(**kwargs)
@@ -159,16 +158,14 @@ def run_model(ensemble, **kwargs):
         os.chdir(icesee_path)
         
         #  --- read the output from the h5 file ISSM model ---
-        try:
+        # try:
+        if True:
             # output_filename = f'ensemble_output_{rank}.h5'
             icesee_path = kwargs.get('icesee_path')
             data_path = kwargs.get('data_path')
             # output_filename = f'ensemble_output_{rank}.h5'
             output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
-            with h5py.File(output_filename, 'r') as f:
-                # Read the data from the file
-                # for key in f.keys():
-                #     output_dic[key] = f[key][:]
+            with h5py.File(output_filename, 'r',driver='mpio',comm=comm) as f:
                 return {
                 'Vx': f['Vx'][0],
                 'Vy': f['Vy'][0],
@@ -176,15 +173,15 @@ def run_model(ensemble, **kwargs):
                 'Pressure': f['Pressure'][0]
                 }
 
-        except Exception as e:
-            print(f"[DEBUG] Error reading the file: {e}")
-            return None
+        # except Exception as e:
+        #     print(f"[Run model] Error reading the file: {e}")
+        #     return None
         
-    except Exception as e:
-        print(f"[DEBUG] Error sending command: {e}")
-        server.shutdown()
-        server.reset_terminal()
-        sys.exit(1)
+    # except Exception as e:
+    #     print(f"[Run model] Error sending command: {e}")
+    #     server.shutdown()
+    #     server.reset_terminal()
+    #     sys.exit(1)
     
     # -- change directory back to the original directory
     os.chdir(icesee_path)

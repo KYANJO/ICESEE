@@ -11,8 +11,9 @@ import subprocess
 import numpy as np
 import time
 import signal
-import traceback
-import logging
+import psutil
+import signal
+import platform
 
 class MatlabServer:
     """A class to manage a MATLAB server for running ISSM models."""
@@ -25,8 +26,35 @@ class MatlabServer:
         self.process = None
         self.verbose = verbose
 
+    def kill_matlab_processes(self):
+        matlab_count = 0
+        for proc in psutil.process_iter(['name', 'pid']):
+            try:
+                # Check for MATLAB processes (name varies by OS)
+                if 'matlab' in proc.info['name'].lower() or 'MATLAB' in proc.info['name']:
+                    print(f"Found MATLAB process: {proc.info['name']} (PID: {proc.info['pid']})")
+                    # Terminate the process
+                    if platform.system() == "Windows":
+                        proc.terminate()  # Windows uses terminate
+                    else:
+                        proc.send_signal(signal.SIGTERM)  # Unix uses SIGTERM
+                    matlab_count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+    
+        if matlab_count == 0:
+            print("No MATLAB processes found running.")
+        else:
+            print(f"Terminated {matlab_count} MATLAB process(es).")
+
+
     def launch(self):
         """Launch MATLAB server and wait for it to be ready."""
+        try:
+            self.kill_matlab_processes()
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            
         if self.verbose:
             print("[Launcher] Starting MATLAB server...")
             print(f"[Launcher] Command file: {self.cmdfile}")

@@ -1,4 +1,4 @@
-function run_model(nprocs,k,dt,tinitial,tfinal)
+function run_model(color,rank,nprocs,k,dt,tinitial,tfinal)
 	% function run_model
 	
 		%  read kwargs from a .mat file
@@ -7,15 +7,21 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 		steps 			= double(kwargs.steps);
 		icesee_path     = char(kwargs.icesee_path);
 		data_path       = char(kwargs.data_path);
-		rank 			= double(kwargs.rank);
+		% rank 			= double(kwargs.rank);
 		
-		if rank == 0
-			fprintf('[ICESEE-ISSM] Running the model from time: %f to %f at step %d\n', tinitial, tfinal, k);
-		end
+		fprintf('[MATLAB] Running model with rank: %d, nprocs: %d\n', rank, nprocs);
+
+		% if rank == 0
+		% 	fprintf('[ICESEE-ISSM] Running the model from time: %f to %f at step %d\n', tinitial, tfinal, k);
+		% end
 	
+		% rank for file writing
+		% rank = rank + color
+		% disp(['[Rank] ', num2str(rank)]);
+
 		%Solving #7
 		% filename = sprintf('ensemble_output_%d.h5', rank);
-		filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank))
+		
 		if any(steps==7)
 			% load the preceding step #help loadmodel
 			% path is given by the organizer with the name of the given step
@@ -48,14 +54,23 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 			%->
 			% plotmodel(md,'data',md.results.StressbalanceSolution.Vel)
 		end
-	
+
+		folder = sprintf('./Models/rank_%04d', rank);
+		% Only create if it doesn't exist
+		if ~exist(folder, 'dir')
+			mkdir(folder);
+		end
 		if any(steps==8)
 			% load the preceding step #help loadmodel
 			% path is given by the organizer with the name of the given step
 			%->
 			if k == 0 || isempty(k)
 				% load Boundary conditions from the inital conditions
-				md = loadmodel('./Models/ISMIP.BoundaryCondition');
+				% md = loadmodel('./Models/ISMIP.BoundaryCondition');
+				% filename = sprintf('./Models/ISMIP.BoundaryCondition_%d.mat', rank);
+				filename = fullfile(folder,'ISMIP.BoundaryCondition.mat');
+				md = loadmodel(filename);
+
 				% time stepping parameters
 				md.timestepping.time_step=dt;
 				md.timestepping.start_time=tinitial;
@@ -73,17 +88,25 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 				md=solve(md,'Transient');
 				% save the given model
 				%->
-				save ./Models/ISMIP.Transient md;
+				% save ./Models/ISMIP.Transient md;
+				% filename_transient = sprintf('./Models/ISMIP.Transient_%d.mat', rank);
+				filename_transient = fullfile(folder,'ISMIP.Transient.mat');
+				save(filename_transient, 'md');
 
 				% save these fields to a file for ensemble use
 				fields = {'Vx', 'Vy', 'Vz', 'Pressure'};
 				result = md.results.TransientSolution(end);
+				filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank))
 				save_ensemble_hdf5(filename, result, fields);
 				% disp['skipping the first step'];
 			else
 				
 				% Load previous model
-				md = loadmodel('./Models/ISMIP.Transient');
+				% md = loadmodel('./Models/ISMIP.Transient');
+				% filename = sprintf('./Models/ISMIP.Transient_%d.mat', rank);
+				filename = fullfile(folder,'ISMIP.Transient.mat');
+				md = loadmodel(filename);
+
 				% load from an h5 file
 				md.initialization.vx       = h5read(filename, '/Vx');
 				md.initialization.vy       = h5read(filename, '/Vy');
@@ -104,11 +127,15 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 				md = solve(md, 'Transient');
 
 				% Save model
-				save('./Models/ISMIP.Transient', 'md');
+				% save('./Models/ISMIP.Transient', 'md');
+				% filename_transient = sprintf('./Models/ISMIP.Transient_%d.mat', rank);
+				filename_transient = fullfile(folder,'ISMIP.Transient.mat');
+				save(filename_transient, 'md');
 
 				% save these fields to a file for ensemble use
 				fields = {'Vx', 'Vy', 'Vz', 'Pressure'};
 				result = md.results.TransientSolution(end);
+				filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank))
 				save_ensemble_hdf5(filename, result, fields);
 			end
 	
@@ -142,5 +169,5 @@ function run_model(nprocs,k,dt,tinitial,tfinal)
 			end
 		end
 	
-		fprintf('[HDF5] Saved: %s\n', filename);
+		% fprintf('[HDF5] Saved: %s\n', filename);
 	end

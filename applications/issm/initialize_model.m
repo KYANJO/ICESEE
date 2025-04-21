@@ -19,6 +19,12 @@ function initialize_model(rank, nprocs)
 	icesee_path		     = char(kwargs.icesee_path); % path to icesee
 	data_path		     = char(kwargs.data_path); % path to data
 
+	folder = sprintf('./Models/rank_%04d', rank);
+	% Only create if it doesn't exist
+	if ~exist(folder, 'dir')
+		mkdir(folder);
+	end
+
     steps = [1:6]; 
 
     % Mesh generation #1
@@ -31,7 +37,10 @@ function initialize_model(rank, nprocs)
 	   
 	    % save the given model
 	    %->
-	    save ./Models/ISMIP.Mesh_generation md;
+		% filename = sprintf('./Models/ISMIP.Mesh_generation_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.Mesh_generation.mat');
+		save(filename, 'md');
+	    % save ./Models/ISMIP.Mesh_generation md;
     end
 
     % Masks #2
@@ -39,7 +48,11 @@ function initialize_model(rank, nprocs)
 	    % load the preceding step #help loadmodel
 	    % path is given by the organizer with the name of the given step
 	    %->
-	    md = loadmodel('./Models/ISMIP.Mesh_generation');
+	    % md = loadmodel('./Models/ISMIP.Mesh_generation');
+		% filename = sprintf('./Models/ISMIP.Mesh_generation_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.Mesh_generation.mat');
+		md = loadmodel(filename);
+
 	    % set the mask #help setmask
 	    % all MISMIP nodes are grounded
 	    %->
@@ -48,7 +61,11 @@ function initialize_model(rank, nprocs)
 	
 	    % save the given model
 	    %->
-	    save ./Models/ISMIP.SetMask md;
+	    % save ./Models/ISMIP.SetMask md;
+		% filename = sprintf('./Models/ISMIP.SetMask_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.SetMask.mat');
+		save(filename, 'md');
+	  
     end
     
     %Parameterization #3
@@ -56,7 +73,11 @@ function initialize_model(rank, nprocs)
 	    % load the preceding step #help loadmodel
 	    % path is given by the organizer with the name of the given step
 	    %->
-	    md = loadmodel('./Models/ISMIP.SetMask');
+	    % md = loadmodel('./Models/ISMIP.SetMask');
+		% filename = sprintf('./Models/ISMIP.SetMask_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.SetMask.mat');
+		md = loadmodel(filename);
+
 	    % parametrize the model # help parameterize
 	    % you will need to fil-up the parameter file defined by the
 	    % ParamFile variable
@@ -64,7 +85,11 @@ function initialize_model(rank, nprocs)
 	    md=parameterize(md,ParamFile);
 	    % save the given model
 	    %->
-	    save ./Models/ISMIP.Parameterization md;
+	    % save ./Models/ISMIP.Parameterization md;
+		% filename = sprintf('./Models/ISMIP.Parameterization_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.Parameterization.mat');
+		save(filename, 'md');
+	    % save ./Models/ISMIP.Parameterization md;
     end
 
     %Extrusion #4
@@ -73,7 +98,11 @@ function initialize_model(rank, nprocs)
 	    % load the preceding step #help loadmodel
 	    % path is given by the organizer with the name of the given step
 	    %->
-	    md = loadmodel('./Models/ISMIP.Parameterization');
+	    % md = loadmodel('./Models/ISMIP.Parameterization');
+		% filename = sprintf('./Models/ISMIP.Parameterization_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.Parameterization.mat');
+		md = loadmodel(filename);
+
 	    % vertically extrude the preceding mesh #help extrude
 	    % only 5 layers exponent 1
 	    %->
@@ -83,7 +112,11 @@ function initialize_model(rank, nprocs)
 	    % plotmodel(md,'data',md.geometry.base)
 	    % save the given model
 	    %->
-	    save ./Models/ISMIP.Extrusion md;
+	    % save ./Models/ISMIP.Extrusion md;
+		% filename = sprintf('./Models/ISMIP.Extrusion_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.Extrusion.mat');
+		save(filename, 'md');
+	    % save ./Models/ISMIP.Extrusion md;
     end
 
     %Set the flow computing method #5
@@ -92,14 +125,20 @@ function initialize_model(rank, nprocs)
 	    % load the preceding step #help loadmodel
 	    % path is given by the organizer with the name of the given step
 	    %->
-	    md = loadmodel('./Models/ISMIP.Extrusion');
+	    % md = loadmodel('./Models/ISMIP.Extrusion');
+		% filename = sprintf('./Models/ISMIP.Extrusion_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.Extrusion.mat');
+		md = loadmodel(filename);
 	    % set the approximation for the flow computation #help setflowequation
 	    % We will be using the Higher Order Model (HO)
 	    %->
 	    md=setflowequation(md,flow_model,'all');
 	    % save the given model
 	    %->
-	    save ./Models/ISMIP.SetFlow md;
+	    % save ./Models/ISMIP.SetFlow md;
+		% filename = sprintf('./Models/ISMIP.SetFlow_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.SetFlow.mat');
+		save(filename, 'md');
     end
     
     %Set Boundary Conditions #6
@@ -108,7 +147,11 @@ function initialize_model(rank, nprocs)
 	    % load the preceding step #help loadmodel
 	    % path is given by the organizer with the name of the given step
 	    %->
-	    md = loadmodel('./Models/ISMIP.SetFlow');
+	    % md = loadmodel('./Models/ISMIP.SetFlow');
+		% filename = sprintf('./Models/ISMIP.SetFlow_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.SetFlow.mat');
+		md = loadmodel(filename);
+
 	    % dirichlet boundary condition are known as SPCs
 	    % ice frozen to the base, no velocity	#md.stressbalance
 	    % SPCs are initialized at NaN one value per vertex
@@ -156,21 +199,27 @@ function initialize_model(rank, nprocs)
 	    end
 	    % save the given model
 	    %->
-	    save ./Models/ISMIP.BoundaryCondition md;
+	    % save ./Models/ISMIP.BoundaryCondition md;
+		% filename = sprintf('./Models/ISMIP.BoundaryCondition_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.BoundaryCondition.mat');
+		save(filename, 'md');
     end
 
 	if step_ens == 8
-	% 	% --- fetch and save data for ensemble use
-		filename = fullfile(icesee_path, data_path, sprintf('ensemble_init_%d.h5', rank));
+
 	% 	% load Boundary conditions from the inital conditions
-		md = loadmodel('./Models/ISMIP.BoundaryCondition');
+		% md = loadmodel('./Models/ISMIP.BoundaryCondition');
+		% filename = sprintf('./Models/ISMIP.BoundaryCondition_%d.mat', rank);
+		filename = fullfile(folder,'ISMIP.BoundaryCondition.mat');
+		md = loadmodel(filename);
 	
 	% 	% save these fields to a file for ensemble use
 		fields = {'vx', 'vy', 'vz', 'pressure'};
 	% 	result = md.results.TransientSolution(end);
 		result = md.initialization(end);
 		
-
+		% 	% --- fetch and save data for ensemble use
+		filename = fullfile(icesee_path, data_path, sprintf('ensemble_init_%d.h5', rank));
 		% Ensure the directory exists
 		[filepath, ~, ~] = fileparts(filename);
 		if ~exist(filepath, 'dir')
