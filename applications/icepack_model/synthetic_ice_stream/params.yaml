@@ -8,7 +8,7 @@ physical-parameters:
 
   # Bedrock slopes 
   b_in: 200       # (m) above sea level at the inflow
-  b_out: -400     # (m) at the terminus
+  b_out: -400.0     # (m) at the terminus
 
   # Surface Elevation
   s_in: 850       # (m)
@@ -31,8 +31,8 @@ modeling-parameters:
 enkf-parameters:
   # Ensemble Kalman Filter parameters
   Nens: 16                      # number of ensemble members (now set in the command line)
-  freq_obs: 5              # frequency of observations
-  obs_max_time: 45          # maximum time for observations
+  freq_obs: 4              # frequency of observations
+  obs_max_time: 45         # maximum time for observations
   obs_start_time: 3             # start time for observations
 
   num_state_vars: 3       # number of state variables  [h,u,v]
@@ -42,9 +42,9 @@ enkf-parameters:
 
   # Statistical parameters (based on the number of state variables)
   sig_model: [0.1,0.1,0.1] # model error standard deviation
-  sig_obs: [5,2,0.5,0.8]   # observation error standard deviation
-  sig_Q: [2.5,1,0.1,0.08]    # process noise standard deviation
-  length_scale: 1.0   # length scale for the covariance matrix
+  sig_obs: [5,0.5,0.1,0.1]   # observation error standard deviation
+  sig_Q: [0.1,0.1,0.1,0.1]    # process noise standard deviation
+  length_scale: 150   # length scale for the covariance matrix
   Q_rho: 0.95 
 
   seed: 1                 # seed for random number generator

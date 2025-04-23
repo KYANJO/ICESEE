@@ -407,6 +407,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                     # state_block_size = hdim * params["num_state_vars"]
 
                     noise = compute_noise_random_fields(ens, hdim, pos, gs_model, params["total_state_param_vars"], L_C)
+                    # noise = noise / np.max(np.abs(noise))
                     # process_noise.append(noise)
                     ensemble_vec[:,ens] += noise
 
@@ -509,6 +510,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                         # noise = multivariate_normal.rvs(mean=np.zeros(state_block_size), cov=Q_err)
                         noise = compute_noise_random_fields(ens, hdim, pos, gs_model, params["total_state_param_vars"], L_C)
                         # initial_data[key][:state_block_size] += noise[:state_block_size]
+                        # noise = noise / np.max(np.abs(noise))
                         initial_data[key] += noise
                         
                     # stack all variables together into a single array
@@ -683,10 +685,10 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
     # ==== Time loop =======================================================================================
     # specified decorrelation length scale, tau,
-    tau = max(params["dt"],10)
-    alpha = 1 - params["dt"]/tau
+    tau = max(model_kwargs.get("dt",params["dt"]),10)
+    alpha = 1 - model_kwargs.get("dt",params["dt"])/tau
     n = model_kwargs.get("nt",params["nt"])
-    rho = np.sqrt((1-alpha**2)/(params["dt"]*(n - 2*alpha - n*alpha**2 + 2*alpha**(n+1))))
+    rho = np.sqrt((1-alpha**2)/(model_kwargs.get("dt",params["dt"])*(n - 2*alpha - n*alpha**2 + 2*alpha**(n+1))))
     params_analysis_0 = np.zeros((2, Nens))
     km = 0
     for k in range(model_kwargs.get("nt",params["nt"])):
@@ -886,16 +888,28 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             # # w0 = np.random.multivariate_normal(np.zeros(nd), np.eye(nd))
                             # # q0 = alpha * q0 + np.sqrt(1 - alpha**2) * w0
                             # q0 = np.random.multivariate_normal(np.zeros(nd), Q_err)
-                            Q_err = Q_err[:state_block_size,:state_block_size]
-                            q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
-                            # q0 = np.sqrt(params["dt"])*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                            # Q_err = Q_err[:state_block_size,:state_block_size]
+                            # q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                            # q0 = np.sqrt(model_kwargs.get("dt",params["dt"]))*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
             
-                            if k+1 <= max(model_kwargs["obs_index"]):
-                                ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] + q0[:state_block_size]
-                            else:
+                            # if k+1 <= max(model_kwargs["obs_index"]):
+                            #     ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] + q0[:state_block_size]
+                            # else:
                                 #  create a guassian noise with zero mean and variance = 1
-                                q0 = np.random.normal(0, 1, state_block_size)
-                                ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] + q0[:state_block_size]
+                                # q0 = np.random.normal(0, 1, state_block_size)
+                                # ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] + q0[:state_block_size]
+                            #---------------------------------------------------------------
+                            if model_kwargs["joint_estimation"] or params["localization_flag"]:
+                                hdim = ensemble_vec.shape[0] // params["total_state_param_vars"]
+                            else:
+                                hdim = ensemble_vec.shape[0] // params["num_state_vars"]
+                            state_block_size = hdim * params["num_state_vars"]
+                            noise = compute_noise_random_fields(ens, hdim, pos, gs_model, params["total_state_param_vars"], L_C)
+                            # noise = noise / np.max(np.abs(noise))
+                            # ensemble_vec[:state_block_size] += np.sqrt(model_kwargs.get("dt",params["dt"]))*noise[:state_block_size]
+
+                            # W = np.random.normal(0, 1, state_block_size) # white noise 
+                            ensemble_vec[:state_block_size] += np.sqrt(model_kwargs.get("dt",params["dt"]))*alpha*noise[:state_block_size]
                             
                             # mean_x = np.mean(ensemble_vec[:state_block_size], axis=1)[:,np.newaxis]
                             # ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] - mean_x
@@ -964,7 +978,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             if key in state_keys:
                                 Q_err = Q_err[:state_block_size, :state_block_size]
                                 q0 = multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
-                                # q0 = np.sqrt(params["dt"])*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
+                                # q0 = np.sqrt(model_kwargs.get("dt",params["dt"]))*multivariate_normal.rvs(np.zeros(state_block_size), Q_err)
                                 global_data[key][:state_block_size] = global_data[key][:state_block_size] + q0[:state_block_size]
                             
                         # Stack all variables into a single array
@@ -1116,7 +1130,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             # parameter_estimated = ensemble_vec[state_block_size:,:]
                             eta = 0.0 # trend term
                             beta = np.ones(nd)
-                            # ensemble_vec[state_block_size:,:] = ensemble_vec[state_block_size:,:] + (eta + beta)*params["dt"] + np.sqrt(params["dt"]) * alpha*rho*q0[state_block_size:]
+                            # ensemble_vec[state_block_size:,:] = ensemble_vec[state_block_size:,:] + (eta + beta)*model_kwargs.get("dt",params["dt"]) + np.sqrt(model_kwargs.get("dt",params["dt"])) * alpha*rho*q0[state_block_size:]
 
                             if EnKF_flag:
                                 # compute the X5 matrix
