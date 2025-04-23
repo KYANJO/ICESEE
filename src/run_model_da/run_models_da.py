@@ -685,10 +685,21 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
 
     # ==== Time loop =======================================================================================
     # specified decorrelation length scale, tau,
-    tau = max(model_kwargs.get("dt",params["dt"]),10)
-    alpha = 1 - model_kwargs.get("dt",params["dt"])/tau
+    min_tau = 200e3
+    max_tau = 500e3
+    dt  = model_kwargs.get("dt",params["dt"])
+    tau = max(max_tau,max(min_tau, dt))
+
+    # tau = max(model_kwargs.get("dt",params["dt"]),10)
+    alpha = 1 - dt/tau
+    # make sure  0=<alpha<1
+    if alpha <= 0 or alpha > 1:
+        alpha = 0.5
+
+
     n = model_kwargs.get("nt",params["nt"])
-    rho = np.sqrt((1-alpha**2)/(model_kwargs.get("dt",params["dt"])*(n - 2*alpha - n*alpha**2 + 2*alpha**(n+1))))
+    # rho = np.sqrt((1-alpha**2)/(dt*(n - 2*alpha - n*alpha**2 + 2*alpha**(n+1))))
+    rho = np.sqrt((1/dt)*((1-alpha)**2)*(1/(n - (2*alpha) - (n*alpha**2) + (2*alpha**(n+1)))))
     params_analysis_0 = np.zeros((2, Nens))
     km = 0
     for k in range(model_kwargs.get("nt",params["nt"])):
