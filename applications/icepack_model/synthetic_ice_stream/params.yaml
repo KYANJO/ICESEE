@@ -3,7 +3,7 @@ physical-parameters:
   Lx: 50e2        # (m)
   Ly: 12e2        # (m)
   nx: 12         # number of elements in the x-direction
-  ny: 8        # number of elements in the y-direction
+  ny: 8       # number of elements in the y-direction
   degree: 2       # degree of the polynomial basis functions
 
   # Bedrock slopes 
@@ -32,7 +32,7 @@ enkf-parameters:
   # Ensemble Kalman Filter parameters
   Nens: 40                      # number of ensemble members (now set in the command line)
   freq_obs: 4              # frequency of observations
-  obs_max_time: 55         # maximum time for observations
+  obs_max_time: 65         # maximum time for observations
   obs_start_time: 2             # start time for observations
 
   num_state_vars: 3       # number of state variables  [h,u,v]
@@ -44,11 +44,11 @@ enkf-parameters:
   sig_model: [0.1,0.1,0.1] # model error standard deviation
   sig_obs: [5,0.5,0.1,0.1]   # observation error standard deviation
   sig_Q: [0.8,0.1,0.1,0.08]    # process noise standard deviation
-  length_scale: 150   # length scale for the covariance matrix
+  length_scale: 15000   # length scale for the covariance matrix
   Q_rho: 0.95 
 
   seed: 1                 # seed for random number generator
-  inflation_factor: 1.12          # inflation factor
+  inflation_factor: 1.1          # inflation factor
   localization_flag: False      # localization flag: True, False
 
   # estimation flags

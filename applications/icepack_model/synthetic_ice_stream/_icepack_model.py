@@ -11,6 +11,7 @@ import os
 import tqdm
 import numpy as np
 from scipy.stats import multivariate_normal,norm
+import copy
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
