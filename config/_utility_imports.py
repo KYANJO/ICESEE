@@ -192,7 +192,7 @@ if not flag_jupyter:
         "param_ens_spread": enkf_params.get("param_ens_spread", []),
         "data_path": params["data_path"],
         'example_name': modeling_params.get('example_name', params.get('model_name')),
-        'length_scale': enkf_params.get("length_scale", 1.0),
+        'length_scale': enkf_params.get("length_scale", []),
         'Q_rho': enkf_params.get("Q_rho", 1.0),
     }
 

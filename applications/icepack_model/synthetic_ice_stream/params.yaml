@@ -44,7 +44,8 @@ enkf-parameters:
   sig_model: [0.1,0.1,0.1] # model error standard deviation
   sig_obs: [5,0.5,0.1,0.1]   # observation error standard deviation
   sig_Q: [0.8,0.1,0.1,0.08]    # process noise standard deviation
-  length_scale: 15000   # length scale for the covariance matrix
+  length_scale: [250, 150, 150, 150]   # length scale for the covariance matrix, can be a list
+
   Q_rho: 0.95 
 
   seed: 1                 # seed for random number generator

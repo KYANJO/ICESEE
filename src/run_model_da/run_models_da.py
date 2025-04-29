@@ -113,7 +113,10 @@ def generate_pseudo_random_field_1d(N, Lx, rh, grid_extension=2, verbose=False):
     
     # Grid spacing
     dx = Lx / N
+    # dx = Lx/nx
     
+    # rh = min(min(Lx)/10,rh)
+
     # Validate parameters
     if rh < dx:
         warnings.warn(f"Decorrelation length rh={rh} is smaller than grid spacing dx={dx}. "
@@ -220,6 +223,58 @@ def generate_pseudo_random_field_1d(N, Lx, rh, grid_extension=2, verbose=False):
         print(f"Field mean: {np.mean(q)}")
     
     return q
+
+def generate_enkf_field(ii_sig, Lx, hdim, num_vars, rh=None, grid_extension=2, verbose=False):
+    """
+    Generate a pseudo-random field for EnKF with specified DoF.
+
+    Parameters:
+    - Lx: Representative length scale (e.g., domain size in x)
+    - hdim: Degrees of freedom per variable
+    - num_vars: Number of variables
+    - rh: Decorrelation length (float or dict with variable-specific values)
+    - grid_extension: Factor to extend grid (default=2)
+    - verbose: Print diagnostics (default=False)
+
+    Returns:
+    - q: Array of shape (hdim * num_vars, 1)
+    """
+    # N = hdim * num_vars
+    if rh is None:
+        rh = Lx / 10  # Default decorrelation length
+
+    # check if rh is a array
+    if isinstance(rh, (list, np.ndarray)):
+      
+        if ii_sig is None:
+            # Separate fields for each variable
+            q_total = []
+            for i in range(num_vars):
+                # var_rh = rh.get(f'var{i+1}', Lx / 10)
+                var_rh = rh[i] if isinstance(rh, list) else rh
+                q_var = generate_pseudo_random_field_1d(
+                    N=hdim, Lx=Lx, rh=var_rh, grid_extension=grid_extension, verbose=verbose
+                )
+                q_total.append(q_var)
+            return np.concatenate(q_total, axis=0)
+        else:
+            # we are in the for loop for perturbation update already
+            q0 = generate_pseudo_random_field_1d(
+                N=hdim, Lx=Lx, rh=rh[ii_sig], grid_extension=grid_extension, verbose=verbose
+            )
+            return q0
+    else:
+        # Single field
+        if ii_sig is None:
+            q0 = generate_pseudo_random_field_1d(
+                N=hdim*num_vars, Lx=Lx, rh=rh, grid_extension=grid_extension, verbose=verbose
+            )
+        else:
+            q0 = generate_pseudo_random_field_1d(
+                N=hdim, Lx=Lx, rh=rh, grid_extension=grid_extension, verbose=verbose
+            )
+        # print(f"Field shape: {q0.shape}")
+        return q0
 
 # ======================== Run model with EnKF ========================
 def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs): 
@@ -604,7 +659,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                     # ensemble_vec[:,ens] += noise
                     #----->
                     N_size = params["total_state_param_vars"] * hdim
-                    noise = generate_pseudo_random_field_1d(N_size, Lx*Ly, len_scale, verbose=True)
+                    # noise = generate_pseudo_random_field_1d(N_size, max(Lx,Ly), len_scale, verbose=True)
+                    noise = generate_enkf_field(None, max(Lx,Ly), hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
                     ensemble_vec[:,ens] += noise
                     # -----------------------------
                     # full_block_size = hdim * params["total_state_param_vars"]
@@ -1115,7 +1171,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             if k == 0:
                                 # noise = compute_noise_random_fields(ens, hdim, pos, gs_model, params["total_state_param_vars"], L_C)
                                 N_size = params["total_state_param_vars"] * hdim
-                                noise = generate_pseudo_random_field_1d(N_size, Lx*Ly, len_scale, verbose=True)
+                                # noise = generate_pseudo_random_field_1d(N_size, max(Lx,Ly), len_scale, verbose=0)
+                                noise = generate_enkf_field(None, max(Lx,Ly),hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
 
                             # noise = noise / np.max(np.abs(noise))
                             # if k+1 <= max(model_kwargs["obs_index"]):
@@ -1126,7 +1183,9 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             q0 = []
                             for ii, sig in enumerate(params["sig_Q"]):
                                 if ii <=params["num_state_vars"]:
-                                    W = np.random.normal(0, 1, hdim)
+                                    # W = np.random.normal(0, 1, hdim)
+                                    # W = generate_pseudo_random_field_1d(hdim, max(Lx,Ly), len_scale, verbose=0)
+                                    W = generate_enkf_field(ii, max(Lx,Ly), hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
                                     noise_ = alpha*noise[ii*hdim:(ii+1)*hdim] + np.sqrt(1 - alpha**2)*W
                                     q0.append(noise_)
 
@@ -1136,13 +1195,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] + noise_[:state_block_size]
                             noise = np.concatenate(q0, axis=0)
                             # =====
-                            # noise_blocks = []
-                            # for ii, sig in enumerate(params["sig_Q"]):
-                            #     Z = np.random.normal(0, 1, hdim)
-                            #     noise_i = np.sqrt(sig)*Z
-                            #     noise_blocks.append(noise_i)
-                            # noise = np.concatenate(noise_blocks, axis=0)
-                            # ensemble_vec[:state_block_size] = ensemble_vec[:state_block_size] + noise[:state_block_size]
+                            # pack
                            
                             
                             # mean_x = np.mean(ensemble_vec[:state_block_size], axis=1)[:,np.newaxis]
