@@ -268,6 +268,61 @@ def parallel_write_data_from_root_2D(full_ensemble=None, comm=None, data_name=No
         # Each rank writes its chunk
         dset[offset:offset + local_nd, :] = local_chunk
 
+def parallel_write_vector_from_root(full_ensemble=None, comm=None, data_shape=None, data_name=None, output_file="icesee_ensemble_data.h5"):
+    """
+    Append ensemble data in parallel where the full matrix exists on rank 0.
+    Each call appends a new time step, resulting in a dataset of shape (nd, Nens, nt).
+
+    full_ensemble: complete matrix on rank 0 with shape (nd, Nens)
+    comm: MPI communicator
+    output_file: Name of the output HDF5 file
+    """
+    # MPI setup
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Get dimensions on root and broadcast
+    if rank == 0:
+        nd, Nens = full_ensemble.shape
+        dtype = full_ensemble.dtype
+    else:
+        nd, Nens, dtype = None, None, None
+    
+    nd = comm.bcast(nd, root=0)
+    Nens = comm.bcast(Nens, root=0)
+    dtype = comm.bcast(dtype, root=0)
+
+    # Calculate local chunk sizes
+    local_nd = nd // size
+    remainder = nd % size
+
+    if rank < remainder:
+        local_nd += 1
+    offset = rank * (nd // size) + min(rank, remainder)
+
+    # Scatter the data from rank 0
+    if rank == 0:
+        chunks = np.array_split(full_ensemble, size, axis=0)
+    else:
+        chunks = None
+    
+    local_chunk = BM.scatter(chunks, comm)
+
+    # Define output file path
+    output_file = os.path.join("_modelrun_datasets", output_file)
+
+    # Open file in parallel mode
+    with h5py.File(output_file, 'w', driver='mpio', comm=comm) as f:
+        # Create dataset with total dimensions
+        #  data_shape should be a tuple
+        dset = f.create_dataset(data_name, data_shape, dtype=dtype)
+        
+        # Each rank writes its chunk
+        dset[offset:offset + local_nd, :,0] = local_chunk
+
+    comm.Barrier()
+
+
     
 def parallel_write_full_ensemble_from_root(timestep, ensemble_mean, params,full_ensemble=None, comm=None, output_file="icesee_ensemble_data.h5"):
     """
@@ -483,6 +538,10 @@ def EnKF_X5(k,ensemble_vec, Cov_obs, Nens, d, model_kwargs,UtilsFunctions):
     # print(f"Rank: {rank_world} X4 shape: {X4.shape}")
     # compute X5 = X4 + I
     X5 = X4 + np.eye(Nens)
+    # sum of each column of X5 should be 1
+    if np.sum(X5, axis=0).all() != 1.0:
+        print(f"Sum of each X5 column is not 1.0: {np.sum(X5, axis=0)}")
+    # print(f"Rank: {comm_world.Get_rank()} X5 sum: {np.sum(X5, axis=0)}")
     del X4; gc.collect()
 
     # ===local computation
@@ -616,7 +675,7 @@ def analysis_enkf_update(k,ens_mean,ensemble_vec, shape_ens, X5, analysis_vec_ij
         state_block_size = ndim*params["num_state_vars"]
         # analysis_vec[state_block_size:,:] /= 10
         # analysis_vec[state_block_size:,:] *= (smb_scale)  # Scale SMB after analysis
-        params['inflation_factor'] = 1.15
+        # params['inflation_factor'] = 1.1
         # analysis_vec = UtilsFunctions(params,  analysis_vec).inflate_ensemble(in_place=True)
         # ---> multiplicative inflation
         mean_params = np.mean(analysis_vec[state_block_size:,:], axis=1)

@@ -3,12 +3,12 @@ physical-parameters:
   Lx: 50e2        # (m)
   Ly: 12e2        # (m)
   nx: 12         # number of elements in the x-direction
-  ny: 8        # number of elements in the y-direction
+  ny: 8       # number of elements in the y-direction
   degree: 2       # degree of the polynomial basis functions
 
   # Bedrock slopes 
   b_in: 200       # (m) above sea level at the inflow
-  b_out: -400     # (m) at the terminus
+  b_out: -400.0     # (m) at the terminus
 
   # Surface Elevation
   s_in: 850       # (m)
@@ -30,10 +30,10 @@ modeling-parameters:
 
 enkf-parameters:
   # Ensemble Kalman Filter parameters
-  Nens: 16                      # number of ensemble members (now set in the command line)
-  freq_obs: 5              # frequency of observations
-  obs_max_time: 50          # maximum time for observations
-  obs_start_time: 3             # start time for observations
+  Nens: 40                      # number of ensemble members (now set in the command line)
+  freq_obs: 4              # frequency of observations
+  obs_max_time: 65         # maximum time for observations
+  obs_start_time: 2             # start time for observations
 
   num_state_vars: 3       # number of state variables  [h,u,v]
   num_param_vars: 1       # number of parameter variables [smb]
@@ -42,11 +42,14 @@ enkf-parameters:
 
   # Statistical parameters (based on the number of state variables)
   sig_model: [0.1,0.1,0.1] # model error standard deviation
-  sig_obs: [10,6,0.5,0.8]   # observation error standard deviation
-  sig_Q: [5,3,0.2,0.8]    # process noise standard deviation
+  sig_obs: [5,0.5,0.1,0.1]   # observation error standard deviation
+  sig_Q: [0.8,0.1,0.1,0.08]    # process noise standard deviation
+  length_scale: 200 #[150, 150, 150, 150]   # length scale for the covariance matrix, can be a list
+
+  Q_rho: 0.95 
 
   seed: 1                 # seed for random number generator
-  inflation_factor: 1.02          # inflation factor
+  inflation_factor: 1.1          # inflation factor
   localization_flag: False      # localization flag: True, False
 
   # estimation flags
@@ -54,7 +57,7 @@ enkf-parameters:
   parameter_estimation: True # parameter estimation flag: True, False
 
   # nurged parameters
-  h_nurge_ic: 300         # nurged increment for initial thickness
+  h_nurge_ic: 350         # nurged increment for initial thickness
   u_nurge_ic: 0         # nurged increment for initial velocity
   nurged_entries_percentage: 0.25 #%     # percentage of nurged entries in the state vector
 
