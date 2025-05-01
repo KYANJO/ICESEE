@@ -35,6 +35,7 @@ applications/flowline/*.nc
 applications/flowline/*.h5
 applications/flowline/*.hdf5
 applications/flowline/*.hdf
+applications/flowline/*.yaml
 
 # -- Icepack
 applications/icepack_model/__pycache__
@@ -55,6 +56,7 @@ applications/icepack_model/synthetic_ice_stream/*.pdf
 applications/icepack_model/synthetic_ice_stream/*.csv
 applications/icepack_model/synthetic_ice_stream/*.nc
 applications/icepack_model/synthetic_ice_stream/*.h5
+applications/icepack_model/synthetic_ice_stream/*.yaml
 
 # --- Lorenz96
 applications/lorenz96/__pycache__
@@ -71,6 +73,7 @@ applications/lorenz96/*.csv
 applications/lorenz96/*.nc
 applications/lorenz96/*.h5
 applications/lorenz96/*.hdf5
+applications/lorenz96/*.yaml
 
 # -- ISSM:wq
 
@@ -88,3 +91,4 @@ applications/issm/*.pdf
 applications/issm/*.csv
 applications/issm/*.nc
 applications/issm/*.h5
+applications/issm/*.yaml
