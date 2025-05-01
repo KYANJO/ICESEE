@@ -27,6 +27,8 @@ function initialize_model(rank, nprocs)
 
     steps = [1:6]; 
 
+	disp(['[MATLAB] Running model with rank: ', num2str(rank), ', nprocs: ', num2str(nprocs)]);
+
     % Mesh generation #1
     if any(steps==1)
         %initialize md as a new model #help model

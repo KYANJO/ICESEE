@@ -51,6 +51,10 @@ def generate_true_state(**kwargs):
     #  --- change directory to the issm directory ---
     os.chdir(issm_examples_dir)
 
+    # --- filename for data saving
+    fname = 'true_state.mat'
+    kwargs.update({'fname': fname})
+
     try:
     # if True:
         # --- fetch treu state vector
@@ -61,7 +65,7 @@ def generate_true_state(**kwargs):
 
         # -- fetch data from inital state
         try: 
-            output_filename = f'{icesee_path}{data_path}/ensemble_init_{rank}.h5'
+            output_filename = f'{icesee_path}/{data_path}/ensemble_init_{rank}.h5'
             # print(f"[DEBUG] Attempting to open file: {output_filename}")
             if not os.path.exists(output_filename):
                 print(f"[ERROR] File does not exist: {output_filename}")
@@ -80,18 +84,20 @@ def generate_true_state(**kwargs):
             kwargs.update({'k': k})
             time = kwargs.get('t')
             kwargs.update({'tinitial': time[k], 'tfinal': time[k+1]})
+            # --- write the state back to h5 file for ISSM model
+            input_filename = f'{icesee_path}/{data_path}/ensemble_output_{rank}.h5'
+            with h5py.File(input_filename, 'w', driver='mpio', comm=comm) as f:
+                f.create_dataset('Vx', data=statevec_true[indx_map["Vx"],k])
+                f.create_dataset('Vy', data=statevec_true[indx_map["Vy"],k])
+                f.create_dataset('Vz', data=statevec_true[indx_map["Vz"],k])
+                f.create_dataset('Pressure', data=statevec_true[indx_map["Pressure"],k])
+
             # -- call the run_model function to push the state forward in time
             ISSM_model(**kwargs)
-            # print(f"[DEBUG] In generate_true_state: finished running the model")
+           
             try:
-                output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
+                output_filename = f'{icesee_path}/{data_path}/ensemble_output_{rank}.h5'
                 with h5py.File(output_filename, 'r', driver='mpio', comm=comm) as f:
-                    # return {
-                    # 'Vx': f['Vx'][0],
-                    # 'Vy': f['Vy'][0],
-                    # 'Vz': f['Vz'][0],
-                    # 'Pressure': f['Pressure'][0]
-                    # }
                     statevec_true[indx_map["Vx"],k+1] = f['Vx'][0]
                     statevec_true[indx_map["Vy"],k+1] = f['Vy'][0]
                     statevec_true[indx_map["Vz"],k+1] = f['Vz'][0]
@@ -132,6 +138,10 @@ def generate_nurged_state(**kwargs):
     #  --- change directory to the issm directory ---
     os.chdir(issm_examples_dir)
 
+    # --- filename for data saving
+    fname = 'nurged_state.mat'
+    kwargs.update({'fname': fname})
+
     try:
     # if True:
         # --- fetch treu state vector
@@ -142,7 +152,7 @@ def generate_nurged_state(**kwargs):
 
         # -- fetch data from inital state
         try: 
-            output_filename = f'{icesee_path}{data_path}/ensemble_init_{rank}.h5'
+            output_filename = f'{icesee_path}/{data_path}/ensemble_init_{rank}.h5'
             # print(f"[DEBUG] Attempting to open file: {output_filename}")
             if not os.path.exists(output_filename):
                 print(f"[ERROR] File does not exist: {output_filename}")
@@ -161,11 +171,20 @@ def generate_nurged_state(**kwargs):
             kwargs.update({'k': k})
             time = kwargs.get('t')
             kwargs.update({'tinitial': time[k], 'tfinal': time[k+1]})
+
+            # --- write the state back to h5 file for ISSM model
+            input_filename = f'{icesee_path}/{data_path}/ensemble_output_{rank}.h5'
+            with h5py.File(input_filename, 'w', driver='mpio', comm=comm) as f:
+                f.create_dataset('Vx', data=statevec_nurged[indx_map["Vx"],k])
+                f.create_dataset('Vy', data=statevec_nurged[indx_map["Vy"],k])
+                f.create_dataset('Vz', data=statevec_nurged[indx_map["Vz"],k])
+                f.create_dataset('Pressure', data=statevec_nurged[indx_map["Pressure"],k])
+
             # -- call the run_model function to push the state forward in time
             ISSM_model(**kwargs)
-            # print(f"[DEBUG] In generate_true_state: finished running the model")
+
             try:
-                output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
+                output_filename = f'{icesee_path}/{data_path}/ensemble_output_{rank}.h5'
                 with h5py.File(output_filename, 'r', driver='mpio', comm=comm) as f:
                     statevec_nurged[indx_map["Vx"],k+1] = f['Vx'][0]
                     statevec_nurged[indx_map["Vy"],k+1] = f['Vy'][0]
@@ -211,7 +230,7 @@ def initialize_ensemble(ens, **kwargs):
     os.chdir(issm_examples_dir)
    
     try:
-        output_filename = f'{icesee_path}{data_path}/ensemble_init_{rank}.h5'
+        output_filename = f'{icesee_path}/{data_path}/ensemble_init_{rank}.h5'
         with h5py.File(output_filename, 'r', driver='mpio', comm=comm) as f:
             # --- fetch state variables
             Vx = f['Vx'][0]

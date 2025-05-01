@@ -1,4 +1,4 @@
-function run_model(color,rank,nprocs,k,dt,tinitial,tfinal)
+function run_model(data_fname,rank,nprocs,k,dt,tinitial,tfinal)
 	% function run_model
 	
 		%  read kwargs from a .mat file
@@ -7,20 +7,11 @@ function run_model(color,rank,nprocs,k,dt,tinitial,tfinal)
 		steps 			= double(kwargs.steps);
 		icesee_path     = char(kwargs.icesee_path);
 		data_path       = char(kwargs.data_path);
-		% rank 			= double(kwargs.rank);
+
 		
-		fprintf('[MATLAB] Running model with rank: %d, nprocs: %d\n', rank, nprocs);
+		% fprintf('[MATLAB] Running model with rank: %d, nprocs: %d filename: %s\n', rank, nprocs, data_fname);
 
-		% if rank == 0
-		% 	fprintf('[ICESEE-ISSM] Running the model from time: %f to %f at step %d\n', tinitial, tfinal, k);
-		% end
-	
-		% rank for file writing
-		% rank = rank + color
-		% disp(['[Rank] ', num2str(rank)]);
-
-		%Solving #7
-		% filename = sprintf('ensemble_output_%d.h5', rank);
+		
 		
 		if any(steps==7)
 			% load the preceding step #help loadmodel
@@ -90,24 +81,29 @@ function run_model(color,rank,nprocs,k,dt,tinitial,tfinal)
 				%->
 				% save ./Models/ISMIP.Transient md;
 				% filename_transient = sprintf('./Models/ISMIP.Transient_%d.mat', rank);
-				filename_transient = fullfile(folder,'ISMIP.Transient.mat');
-				save(filename_transient, 'md');
+				% filename = fullfile(folder,'ISMIP.Transient.mat');
+				filename = fullfile(folder, data_fname);	
+				save(filename, 'md');
+
+				% fprintf('[MATLAB] Running model at k: %d, with rank: %d, nprocs: %d filename: %s\n', k,rank, nprocs, data_fname);
 
 				% save these fields to a file for ensemble use
 				fields = {'Vx', 'Vy', 'Vz', 'Pressure'};
 				result = md.results.TransientSolution(end);
-				filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank))
+				filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank));
 				save_ensemble_hdf5(filename, result, fields);
 				% disp['skipping the first step'];
 			else
-				
+				fprintf('[MATLAB] data_fname received: %s\n', data_fname);
 				% Load previous model
 				% md = loadmodel('./Models/ISMIP.Transient');
 				% filename = sprintf('./Models/ISMIP.Transient_%d.mat', rank);
-				filename = fullfile(folder,'ISMIP.Transient.mat');
+				% filename = fullfile(folder,'ISMIP.Transient.mat');
+				filename = fullfile(folder,data_fname);
 				md = loadmodel(filename);
 
-				% load from an h5 file
+				% load from an ensemble_input file
+				filename = fullfile(icesee_path, data_path, sprintf('ensemble_output_%d.h5', rank));
 				md.initialization.vx       = h5read(filename, '/Vx');
 				md.initialization.vy       = h5read(filename, '/Vy');
 				md.initialization.vz       = h5read(filename, '/Vz');
@@ -129,7 +125,8 @@ function run_model(color,rank,nprocs,k,dt,tinitial,tfinal)
 				% Save model
 				% save('./Models/ISMIP.Transient', 'md');
 				% filename_transient = sprintf('./Models/ISMIP.Transient_%d.mat', rank);
-				filename_transient = fullfile(folder,'ISMIP.Transient.mat');
+				% filename = fullfile(folder,'ISMIP.Transient.mat');
+				filename_transient = fullfile(folder, data_fname);
 				save(filename_transient, 'md');
 
 				% save these fields to a file for ensemble use

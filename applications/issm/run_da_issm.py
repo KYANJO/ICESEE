@@ -81,7 +81,7 @@ shutil.copy(os.path.join(icesee_cwd, 'model_kwargs.mat'), issm_examples_dir)
 os.chdir(issm_examples_dir)
 
 # --- intialize the matlab server ---
-server = MatlabServer(verbose=0)
+server = MatlabServer(verbose=1)
 server.launch() # start the server
 
 # Set up global shutdown handler
@@ -130,12 +130,21 @@ if False:
             print(f"[DEBUG] Error shutting down server: {e}")
         sys.exit(1)
 else:
-    result = run_icesee_with_server(
+    # result = run_icesee_with_server(
+    #     icesee_model_data_assimilation(
+    #     enkf_params["model_name"],
+    #     enkf_params["filter_type"],
+    #     **kwargs), server, False,icesee_comm,verbose=False
+    # )
+    try:
         icesee_model_data_assimilation(
-        enkf_params["model_name"],
-        enkf_params["filter_type"],
-        **kwargs), server, False,icesee_comm,verbose=False
-    )
+            enkf_params["model_name"],
+            enkf_params["filter_type"],
+            **kwargs)
+        server.shutdown()
+    except Exception as e:
+        print(f"[run_da_issm] Error running the model: {e}")
+        result = None
     # server.kill_matlab_processes()
 #     print("Checking stdout:", sys.stdout, file=sys.stderr)  # Use stderr to avoid stdout issues
 # sys.stdout.flush()

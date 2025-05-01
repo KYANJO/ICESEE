@@ -232,14 +232,6 @@ class MatlabServer:
 #  ---- end of MatlabServer class ----
 
 def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
-    """
-    Run ISSM using a MATLAB script via subprocess.Popen.
-
-    Parameters:
-    - issm_cmd: Full command string to run ISSM in MATLAB
-    - nprocs: Number of processors to pass to runme.m (for display/debug)
-    - verbose: If True, print stdout (trimmed) and stderr (only if non-empty)
-    """
     try:
         process = subprocess.Popen(
             issm_cmd,
@@ -253,30 +245,71 @@ def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
 
         if verbose:
             stdout_lines = stdout.splitlines()
-            trimmed_stdout = "\n".join(stdout_lines[9:])  # Skip banner
+            trimmed_stdout = "\n".join(stdout_lines[9:])
             print(f"\n[ICESEE] ➤ Running ISSM with {nprocs} processors")
             print("------ ICESEE<->MATLAB STDOUT ------")
             print(trimmed_stdout.strip())
 
-            if stderr.strip():  # Only print stderr if there's content
+            if stderr.strip():
                 print("------ ICESEE<->MATLAB STDERR ------")
                 print(stderr.strip())
 
         if process.returncode != 0:
-            # raise subprocess.CalledProcessError(
-            #     process.returncode, issm_cmd, output=stdout, stderr=stderr
-            # )
             raise subprocess.CalledProcessError(process.returncode, issm_cmd)
 
     except FileNotFoundError:
         print("❌ Error: MATLAB not found in PATH.")
     except subprocess.CalledProcessError as e:
         print(f"❌ MATLAB exited with error code {e.returncode}")
-        if e.stderr.strip():
-            print("------ MATLAB STDERR ------")
-            print(e.stderr.strip())
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
+        
+# def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
+#     """
+#     Run ISSM using a MATLAB script via subprocess.Popen.
+
+#     Parameters:
+#     - issm_cmd: Full command string to run ISSM in MATLAB
+#     - nprocs: Number of processors to pass to runme.m (for display/debug)
+#     - verbose: If True, print stdout (trimmed) and stderr (only if non-empty)
+#     """
+#     try:
+#         process = subprocess.Popen(
+#             issm_cmd,
+#             shell=True,
+#             stdout=subprocess.PIPE,
+#             stderr=subprocess.PIPE,
+#             universal_newlines=True
+#         )
+
+#         stdout, stderr = process.communicate()
+
+#         if verbose:
+#             stdout_lines = stdout.splitlines()
+#             trimmed_stdout = "\n".join(stdout_lines[9:])  # Skip banner
+#             print(f"\n[ICESEE] ➤ Running ISSM with {nprocs} processors")
+#             print("------ ICESEE<->MATLAB STDOUT ------")
+#             print(trimmed_stdout.strip())
+
+#             if stderr.strip():  # Only print stderr if there's content
+#                 print("------ ICESEE<->MATLAB STDERR ------")
+#                 print(stderr.strip())
+
+#         if process.returncode != 0:
+#             # raise subprocess.CalledProcessError(
+#             #     process.returncode, issm_cmd, output=stdout, stderr=stderr
+#             # )
+#             raise subprocess.CalledProcessError(process.returncode, issm_cmd)
+
+#     except FileNotFoundError:
+#         print("❌ Error: MATLAB not found in PATH.")
+#     except subprocess.CalledProcessError as e:
+#         print(f"❌ MATLAB exited with error code {e.returncode}")
+#         if e.stderr.strip():
+#             print("------ MATLAB STDERR ------")
+#             print(e.stderr.strip())
+#     except Exception as e:
+#         print(f"❌ Unexpected error: {e}")
         
 #  --- Add ISSM_DIR to sys.path ---
 def add_issm_dir_to_sys_path(issm_dir=None):
