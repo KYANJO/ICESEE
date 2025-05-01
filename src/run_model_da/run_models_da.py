@@ -314,7 +314,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
         model_kwargs.update({"comm_world": comm_world, "subcomm": subcomm})
 
         # --- check if the modelrun dataset directory is present ---
-        _modelrun_datasets = f"_modelrun_datasets"
+        _modelrun_datasets = model_kwargs.get("data_path",None)
         if rank_world == 0 and not os.path.exists(_modelrun_datasets):
             # cretate the directory
             os.makedirs(_modelrun_datasets, exist_ok=True)
@@ -1126,7 +1126,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             subcomm.Barrier()
                             ens = ensemble_id
                             # ---- read from file ----
-                            input_file = f"_modelrun_datasets/icesee_ensemble_data.h5"
+                            input_file = f"{_modelrun_datasets}/icesee_ensemble_data.h5"
                             with h5py.File(input_file, "r", driver="mpio", comm=subcomm) as f:
                                 ensemble_vec = f["ensemble"][:,ens,k]
                             # ---- end of read from file ----
@@ -1235,7 +1235,7 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                     subcomm.Barrier()
                     ens = color # each subcomm has a unique color
                     # ---- read from file ----
-                    input_file = f"_modelrun_datasets/icesee_ensemble_data.h5"
+                    input_file = f"{_modelrun_datasets}/icesee_ensemble_data.h5"
                     with h5py.File(input_file, "r", driver="mpio", comm=subcomm) as f:
                         ensemble_vec = f["ensemble"][:,ens,k]
                     # ---- end of read from file ----

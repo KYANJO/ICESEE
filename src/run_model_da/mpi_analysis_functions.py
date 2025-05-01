@@ -50,7 +50,7 @@ def parallel_write_ensemble_scattered(timestep, ensemble_mean, params, ensemble_
     #     os.makedirs(_modelrun_datasets, exist_ok=True)
     
     # comm.barrier() # wait for all processes to reach this point
-    output_file = os.path.join("_modelrun_datasets", output_file)
+    output_file = os.path.join(parmas.get('data_path'), output_file)
 
     # Open file in parallel mode
     if timestep == 0:
@@ -365,7 +365,7 @@ def parallel_write_full_ensemble_from_root(timestep, ensemble_mean, params,full_
     local_chunk = BM.scatter(chunks, comm)
 
     # Define output file path
-    output_file = os.path.join("_modelrun_datasets", output_file)
+    output_file = os.path.join(params.get('data_path'), output_file)
 
     # Open file in parallel mode
     if timestep == 0:
