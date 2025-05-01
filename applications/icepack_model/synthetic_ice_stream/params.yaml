@@ -3,7 +3,7 @@ physical-parameters:
   Lx: 50e2        # (m)
   Ly: 12e2        # (m)
   nx: 12         # number of elements in the x-direction
-  ny: 8       # number of elements in the y-direction
+  ny: 8      # number of elements in the y-direction
   degree: 2       # degree of the polynomial basis functions
 
   # Bedrock slopes 
@@ -25,14 +25,14 @@ modeling-parameters:
   da:   -2.7              # change of accumulation rate
   a_in_p: 0.17            # nurged accumulation rate at the inflow
   da_p: -0.27           # nurged change of accumulation rate
-  num_years: 250          # number of years to run the model
+  num_years: 100          # number of years to run the model
   timesteps_per_year: 2   # number of timesteps per year
 
 enkf-parameters:
   # Ensemble Kalman Filter parameters
   Nens: 40                      # number of ensemble members (now set in the command line)
-  freq_obs: 10              # frequency of observations
-  obs_max_time: 150         # maximum time for observations
+  freq_obs: 7              # frequency of observations
+  obs_max_time: 65         # maximum time for observations
   obs_start_time: 5             # start time for observations
 
   num_state_vars: 3       # number of state variables  [h,u,v]
@@ -44,12 +44,12 @@ enkf-parameters:
   sig_model: [0.1,0.1,0.1] # model error standard deviation
   sig_obs: [5,0.5,0.1,0.1]   # observation error standard deviation
   sig_Q: [0.8,0.4,0.01,0.08]    # process noise standard deviation
-  length_scale: 200 #[150, 150, 150, 150]   # length scale for the covariance matrix, can be a list
+  length_scale: [96,96,96,120] #[150, 150, 150, 150]   # length scale for the covariance matrix, can be a list
 
   Q_rho: 0.95 
 
   seed: 1                 # seed for random number generator
-  inflation_factor: 1.1          # inflation factor
+  inflation_factor: 1.12          # inflation factor
   localization_flag: False      # localization flag: True, False
 
   # estimation flags
@@ -59,7 +59,7 @@ enkf-parameters:
   # nurged parameters
   h_nurge_ic: 350         # nurged increment for initial thickness
   u_nurge_ic: 0         # nurged increment for initial velocity
-  nurged_entries_percentage: 0.20 #%     # percentage of nurged entries in the state vector
+  nurged_entries_percentage: 0.25 #%     # percentage of nurged entries in the state vector
 
   # enkf model parameters
   model_name: "icepack"               # name of the model
@@ -70,5 +70,5 @@ enkf-parameters:
   n_modeltasks: 1                     # number of model tasks (for MPI)
   commandlinerun: "True"              # command line run flag: True, False
   execution_flag: 0                  #`execution flag: 0 ->default, 1 -> sequntial, 2 -> even_distribution_of_problem size, 3 -> even_distribution_of_problem size with load balancing
-  data_path: /_modelrun_datasets
+  data_path: _modelrun_datasets
  

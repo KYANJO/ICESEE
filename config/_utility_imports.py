@@ -77,7 +77,7 @@ if not flag_jupyter:
     parser.add_argument('--default_run', action='store_true', help='default run')
     parser.add_argument('--sequential_run', action='store_true', help='sequential run')
     parser.add_argument('--even_distribution', action='store_true', help='even distribution')
-    parser.add_argument('--data_path', type=str, required=False, default= '/_modelrun_datasets', help='folder to save data for single or multiple runs')
+    parser.add_argument('--data_path', type=str, required=False, default= '_modelrun_datasets', help='folder to save data for single or multiple runs')
     parser.add_argument('execution_mode', type=int, choices=[0, 1, 2], nargs='?', help='Execution mode: 0=default_run, 1=sequential_run, 2=even_distribution')
 
     args = parser.parse_args()
@@ -149,8 +149,8 @@ if not flag_jupyter:
     if Nens == 1:
         params["Nens"] = int(float(enkf_params.get("Nens", 1)))
 
-    if data_path == '/_modelrun_datasets':
-        params["data_path"] = enkf_params.get("data_path", "/_modelrun_datasets")
+    if data_path == '_modelrun_datasets':
+        params["data_path"] = enkf_params.get("data_path", "_modelrun_datasets")
     
     if run_flag:
         execution_flag = params.get("execution_flag")

@@ -659,8 +659,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                     # ensemble_vec[:,ens] += noise
                     #----->
                     N_size = params["total_state_param_vars"] * hdim
-                    # noise = generate_pseudo_random_field_1d(N_size, max(Lx,Ly), len_scale, verbose=True)
-                    noise = generate_enkf_field(None, max(Lx,Ly), hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
+                    # noise = generate_pseudo_random_field_1d(N_size,np.sqrt(Lx*Ly), len_scale, verbose=True)
+                    noise = generate_enkf_field(None,np.sqrt(Lx*Ly), hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
                     ensemble_vec[:,ens] += noise
                     # -----------------------------
                     # full_block_size = hdim * params["total_state_param_vars"]
@@ -1171,8 +1171,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             if k == 0:
                                 # noise = compute_noise_random_fields(ens, hdim, pos, gs_model, params["total_state_param_vars"], L_C)
                                 N_size = params["total_state_param_vars"] * hdim
-                                # noise = generate_pseudo_random_field_1d(N_size, max(Lx,Ly), len_scale, verbose=0)
-                                noise = generate_enkf_field(None, max(Lx,Ly),hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
+                                # noise = generate_pseudo_random_field_1d(N_size,np.sqrt(Lx*Ly), len_scale, verbose=0)
+                                noise = generate_enkf_field(None,np.sqrt(Lx*Ly),hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
 
                             # noise = noise / np.max(np.abs(noise))
                             # if k+1 <= max(model_kwargs["obs_index"]):
@@ -1184,8 +1184,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
                             for ii, sig in enumerate(params["sig_Q"]):
                                 if ii <=params["num_state_vars"]:
                                     # W = np.random.normal(0, 1, hdim)
-                                    # W = generate_pseudo_random_field_1d(hdim, max(Lx,Ly), len_scale, verbose=0)
-                                    W = generate_enkf_field(ii, max(Lx,Ly), hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
+                                    # W = generate_pseudo_random_field_1d(hdim,np.sqrt(Lx*Ly), len_scale, verbose=0)
+                                    W = generate_enkf_field(ii,np.sqrt(Lx*Ly), hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
                                     noise_ = alpha*noise[ii*hdim:(ii+1)*hdim] + np.sqrt(1 - alpha**2)*W
                                     q0.append(noise_)
 
