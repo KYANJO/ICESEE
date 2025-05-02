@@ -8,6 +8,24 @@ This design is being extended to integrate with cloud computing services such as
 
 ## Installation
 
+### Prerequisites
+
+To run specific applications such as `icepack` or `issm`, you must first install the external dependencies listed in `external_requirements.txt`. These include libraries such as:
+
+- `firedrake`
+- `issm`
+- `mpich`
+- `gmsh`
+
+These dependencies **require manual installation** and **cannot be installed automatically via `pip`**.
+
+Please follow the official installation instructions for each package:
+- Icepack: [https://icepack.github.io/install](https://icepack.github.io/install)  
+- ISSM: [https://issm.jpl.nasa.gov/download](https://issm.jpl.nasa.gov/download)
+
+> **Note**: The `requirements.txt` file includes only the core dependencies needed for installing and running ICESEE itself. It does **not** cover the external models (except for `flowline_model` and `lorenz96`). If you plan to use or extend other supported models, you must install their required packages independently. TO run ICESEE in parallel using `MPI` you must have either `Openmpi` installed or another variant of `MPICH` installed.
+
+### ICESEE installation
 ICESEE can be installed as a Python package for general use or set up for development. Choose the appropriate method below based on your needs.
 
 ### Option 1: Install as a Python Package (General Use)
@@ -33,8 +51,8 @@ source icesee-env/bin/activate
 make install
 ```
 
-- `setup_venv.sh` creates a virtual environment named `icesee-env` with the project directory in `PYTHONPATH`.
-- `make install` installs ICESEE in editable mode (`pip install -e .`), making `PYTHONPATH` unnecessary.
+- `setup_venv.sh` creates a virtual environment named `icesee-env` with the project directory in `PYTHONPATH` and installs dependencies from `requirements.txt`.
+- `make install` installs ICESEE in editable mode (`pip install -e .`),  along with dependencies listed in `requirements.txt`, making `PYTHONPATH` unnecessary.
 
 ### Option 3: Virtual Environment + PYTHONPATH (Development)
 
@@ -48,7 +66,7 @@ chmod +x setup_venv.sh
 source icesee-env/bin/activate
 ```
 
-The virtual environment automatically includes the project directory in `PYTHONPATH` via `sitecustomize.py`.
+The virtual environment automatically includes the project directory in `PYTHONPATH` via `sitecustomize.py` together with dependencies from `requirements.txt`.
 
 ### Option 4: Manual PYTHONPATH Setup (Development)
 
@@ -59,6 +77,7 @@ git clone https://github.com/KYANJO/ICESEE.git
 cd ICESEE
 make setup
 source ~/.bashrc  # or source ~/.zshrc
+pip install -r requirements.txt
 ```
 
 Alternatively, for Windows:

@@ -4,8 +4,8 @@
 
 setup:
 	@echo "Setting PYTHONPATH..."
-	@echo "export PYTHONPATH=\$$PYTHONPATH:$(PWD)" >> ~/.bashrc
-	@echo "export PYTHONPATH=\$$PYTHONPATH:$(PWD)" >> ~/.zshrc
+	@echo "export PYTHONPATH=$(PWD):\$$PYTHONPATH" >> ~/.bashrc
+	@echo "export PYTHONPATH=$(PWD):\$$PYTHONPATH" >> ~/.zshrc
 	@echo "PYTHONPATH updated. Run 'source ~/.bashrc' or 'source ~/.zshrc' to apply changes."
 
 install:

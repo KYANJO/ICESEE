@@ -8,10 +8,6 @@
 # --- python imports ---
 import sys
 import os
-import tqdm
-import numpy as np
-from scipy.stats import multivariate_normal,norm
-import copy
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
@@ -31,12 +27,9 @@ from icepack.constants import (
 )
 
 # --- Utility imports ---
-sys.path.insert(0, '../../../config')
-from _utility_imports import icesee_get_index
-
-# --- globally define the state variables ---
-global vec_inputs 
-vec_inputs = ['h','u','v','smb']
+# sys.path.insert(0, '../../../config')
+# from _utility_imports import icesee_get_index
+from ICESEE.config._utility_imports import icesee_get_index
 
 # --- model initialization ---
 def initialize_model(physical_params, modeling_params, comm):

@@ -13,6 +13,12 @@ mkdir -p "$SITE_PACKAGES"
 echo "import sys" > "$SITE_PACKAGES/sitecustomize.py"
 echo "sys.path.append('$SCRIPT_DIR')" >> "$SITE_PACKAGES/sitecustomize.py"
 
-echo "Virtual environment created with PYTHONPATH including $SCRIPT_DIR"
+# Install required dependencies from requirements.txt
+source icesee-env/bin/activate
+pip install -r requirements.txt
+deactivate
+
+echo "Virtual environment 'icesee-env' created with PYTHONPATH including $SCRIPT_DIR"
+echo "Dependencies from requirements.txt installed"
 echo "Activate with: source icesee-env/bin/activate"
 echo "Then, run 'make install' to install ICESEE (recommended) or use PYTHONPATH."
