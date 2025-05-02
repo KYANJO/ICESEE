@@ -23,7 +23,7 @@ Please follow the official installation instructions for each package:
 - Icepack: [https://icepack.github.io/install](https://icepack.github.io/install)  
 - ISSM: [https://issm.jpl.nasa.gov/download](https://issm.jpl.nasa.gov/download)
 
-> **Note**: The `requirements.txt` file includes only the core dependencies needed for installing and running ICESEE itself. It does **not** cover the external models (except for `flowline_model` and `lorenz96`). If you plan to use or extend other supported models, you must install their required packages independently. TO run ICESEE in parallel using `MPI` you must have either `Openmpi` installed or another variant of `MPICH` installed.
+> **Note**: The `requirements.txt` file includes only the core dependencies needed for installing and running ICESEE itself. It does **not** cover the external models (except for `flowline_model` and `lorenz96`). If you plan to use or extend other supported models, you must install their required packages independently. TO run ICESEE in parallel using `MPI` you must have either `Openmpi` installed or another variant of `MPICH` installed. In the event where the application to be extended to ICESEE has its own python environment use manual install, see Option 4.
 
 ### ICESEE installation
 ICESEE can be installed as a Python package for general use or set up for development. Choose the appropriate method below based on your needs.
@@ -69,6 +69,8 @@ source icesee-env/bin/activate
 The virtual environment automatically includes the project directory in `PYTHONPATH` via `sitecustomize.py` together with dependencies from `requirements.txt`.
 
 ### Option 4: Manual PYTHONPATH Setup (Development)
+
+> This option is good when the application to be extendend to ICESEE already has its own environment, to avoid dependency conflicts consider this option. 
 
 Clone the repository and manually configure `PYTHONPATH`:
 
