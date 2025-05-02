@@ -107,7 +107,7 @@ This runs the `synthetic_flow.py` script, which uses functions from `ICESEE.core
 The supported applications are located in the [applications](./applications) directory and currently include:
 - **[Flowline](./applications/flowline/)**: Documentation and full implementation forthcoming.
 - **[Icepack](./applications/icepack_model/)**: Ice sheet modeling application (fully developed).
-- **[ISSM](./applications/issm_model/): Ice sheet modeling application (development underway)
+- **[ISSM](./applications/issm_model/)**: Ice sheet modeling application (development underway)
 - **[Lorenz-96](./applications/lorenz-96/)**: Simplified model for testing data assimilation.
 
 Each application includes either a Python script or a Jupyter notebook for execution. Detailed documentation is included in the README files in each application folder.
