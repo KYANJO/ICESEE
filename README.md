@@ -29,7 +29,7 @@ git clone https://github.com/your-repo/ICESEE.git
 cd ICESEE
 chmod +x setup_venv.sh
 ./setup_venv.sh
-source venv/bin/activate
+source icesee-env/bin/activate
 make install
 ```
 
@@ -45,7 +45,7 @@ git clone https://github.com/your-repo/ICESEE.git
 cd ICESEE
 chmod +x setup_venv.sh
 ./setup_venv.sh
-source venv/bin/activate
+source icesee-env/bin/activate
 ```
 
 The virtual environment automatically includes the project directory in `PYTHONPATH` via `sitecustomize.py`.
@@ -79,7 +79,7 @@ For Windows users, after cloning:
 1. Set up a virtual environment:
 ```cmd
 setup_venv.bat
-venv\Scripts\activate
+icesee-env\Scripts\activate
 ```
 
 2. Install ICESEE:
