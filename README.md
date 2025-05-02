@@ -33,7 +33,7 @@ source venv/bin/activate
 make install
 ```
 
-- `setup_venv.sh` creates a virtual environment with the project directory in `PYTHONPATH`.
+- `setup_venv.sh` creates a virtual environment named `icesee-env` with the project directory in `PYTHONPATH`.
 - `make install` installs ICESEE in editable mode (`pip install -e .`), making `PYTHONPATH` unnecessary.
 
 ### Option 3: Virtual Environment + PYTHONPATH (Development)
