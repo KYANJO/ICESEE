@@ -129,7 +129,7 @@ These variants provide flexible and scalable data assimilation methods optimized
 
 Currently, only the **EnKF** variant supports advanced parallelization and cutting-edge data assimilation techniques, such as new implementations of robust random fields and pseudorandom field generators, eliminating the need for localization. Both MPI-based and non-MPI-based applications are supported for data assimilation.
 
-The other variants (**DEnKF**, **EnTKF**, **EnRSKF**) are available in the serial version of ICESEE, with their implementations located in the [./src/EnKF](./src/EnKF) directory. At present, only **EnKF** and **DEnKF** support localization, while all variants support inflation.
+The other variants (**DEnKF**, **EnTKF**, **EnRSKF**) are available in the serial version of ICESEE, with their implementations located in the [/src/EnKF](./src/EnKF) directory. At present, only **EnKF** and **DEnKF** support localization, while all variants support inflation.
 
 For non-MPI applications, the traditional implementations of **EnKF** and **DEnKF** are fully parallelized.
 
