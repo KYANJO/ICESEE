@@ -23,7 +23,12 @@ Please follow the official installation instructions for each package:
 - Icepack: [https://icepack.github.io/install](https://icepack.github.io/install)  
 - ISSM: [https://issm.jpl.nasa.gov/download](https://issm.jpl.nasa.gov/download)
 
-> **Note**: The `requirements.txt` file includes only the core dependencies needed for installing and running ICESEE itself. It does **not** cover the external models (except for `flowline_model` and `lorenz96`). If you plan to use or extend other supported models, you must install their required packages independently. TO run ICESEE in parallel using `MPI` you must have either `Openmpi` installed or another variant of `MPICH` installed. In the event where the application to be extended to ICESEE has its own python environment use manual install, see Option 4.
+> **Important Notes on Dependencies**
+>
+> - The `requirements.txt` file includes only the core dependencies required to install and run ICESEE.
+> - Dependencies for external models are not included, except for `flowline_model` and `lorenz96`. If you plan to use or extend other supported models, you must install their requirements manually.
+> - To run ICESEE in parallel using MPI, ensure that either OpenMPI or a compatible MPICH variant is installed on your system.
+> - If you are integrating ICESEE with an existing Python application or environment, refer to **Option 4 (Manual Installation)** for a custom setup.
 
 ### ICESEE installation
 ICESEE can be installed as a Python package for general use or set up for development. Choose the appropriate method below based on your needs.
