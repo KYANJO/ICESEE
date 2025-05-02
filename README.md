@@ -25,7 +25,7 @@ This installs the latest released version of ICESEE from PyPI
 Clone the repository and set up a virtual environment with the package installed:
 
 ```bash
-git clone https://github.com/your-repo/ICESEE.git 
+git clone https://github.com/KYANJO/ICESEE.git
 cd ICESEE
 chmod +x setup_venv.sh
 ./setup_venv.sh
@@ -41,7 +41,7 @@ make install
 Clone the repository and set up a virtual environment with `PYTHONPATH` configured:
 
 ```bash
-git clone https://github.com/your-repo/ICESEE.git 
+git clone https://github.com/KYANJO/ICESEE.git
 cd ICESEE
 chmod +x setup_venv.sh
 ./setup_venv.sh
@@ -55,7 +55,7 @@ The virtual environment automatically includes the project directory in `PYTHONP
 Clone the repository and manually configure `PYTHONPATH`:
 
 ```bash
-git clone https://github.com/your-repo/ICESEE.git 
+git clone https://github.com/KYANJO/ICESEE.git
 cd ICESEE
 make setup
 source ~/.bashrc  # or source ~/.zshrc
@@ -64,7 +64,7 @@ source ~/.bashrc  # or source ~/.zshrc
 Alternatively, for Windows:
 
 ```cmd
-git clone https://github.com/your-repo/ICESEE.git 
+git clone https://github.com/KYANJO/ICESEE.git
 cd ICESEE
 setup_env.bat
 ```

@@ -8,7 +8,7 @@ setup(
     description="A state-of-the-art data assimilation software package for coupling ice sheet models.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/KYANJO/ICESEE/tree/develop",  # GitHub repo URL
+    url="https://github.com/KYANJO/ICESEE/tree/main",  # GitHub repo URL
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
