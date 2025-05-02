@@ -157,12 +157,11 @@ This makes ICESEE available for installation via `pip install ICESEE`.
 
 ## Development Notes
 
-- **Namespace Package**: ICESEE is structured as a Python namespace package (no `__init__.py` in `ICESEE/`), allowing modularity and clean imports (e.g., `from ICESEE.core.utilities`).
+- **Namespace Package**: ICESEE is structured as a Python namespace package (no `__init__.py` in `ICESEE/`), allowing modularity and clean imports (e.g., `from ICESEE.src.run_model_da`).
 - **Virtual Environment**: Use `setup_venv.sh` (or `setup_venv.bat` for Windows) to create an isolated environment, ensuring no conflicts with system Python.
 - **Makefile**: Simplifies setup with `make setup` (configures `PYTHONPATH`) or `make install` (installs the package, recommended).
-- **Dependencies**: Add required libraries (e.g., NumPy, SciPy) to `setup.py` under `install_requires`.
+- **Dependencies**: Add required libraries (e.g., numPy, sciPy, mpi4py,gstools) to `setup.py` under `install_requires`.
 - **Testing**: Test the setup by cloning the repository in a clean environment (e.g., Docker container).
-- **Contributing**: See `CONTRIBUTING.md` (if available) for guidelines on contributing to ICESEE.
 
 ---
 
@@ -172,16 +171,16 @@ This makes ICESEE available for installation via `pip install ICESEE`.
 
 ICESEE/
 ├── applications/
-│   ├── icepack/
+│   ├── icepack_model/
 │   │   ├── examples/
-│   │   │   ├── synthetic_flow/
-│   │   │   ├── shallow_flow/
+│   │   │   ├── synthetic_ice_stream/
+│   │   │   ├── shallowIce/
 │   │   │──icepack_utils 
 │   ├── issm_model/
 │   │   ├── examples/
 │   │   │   ├── ISMIP/
 │   │   ├──issm_utils 
-│   ├── flowline/
+│   ├── flowline_model/
 │   ├── lorenz-96/
 ├── src/
 │   ├── EnKF
