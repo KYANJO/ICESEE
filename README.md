@@ -27,6 +27,7 @@ Clone the repository and set up a virtual environment with the package installed
 ```bash
 git clone https://github.com/your-repo/ICESEE.git 
 cd ICESEE
+chmod +x setup_venv.sh
 ./setup_venv.sh
 source venv/bin/activate
 make install
@@ -42,6 +43,7 @@ Clone the repository and set up a virtual environment with `PYTHONPATH` configur
 ```bash
 git clone https://github.com/your-repo/ICESEE.git 
 cd ICESEE
+chmod +x setup_venv.sh
 ./setup_venv.sh
 source venv/bin/activate
 ```
