@@ -18,7 +18,7 @@ import gc # garbage collector to free up memory
 import copy
 import re
 import time
-import numexpr as ne # for fast numerical computations
+# import numexpr as ne # for fast numerical computations
 
 
 # --- Add required paths ---

@@ -36,7 +36,7 @@ from firedrake.petsc import PETSc
 from ICESEE.config._utility_imports import *
 from ICESEE.config._utility_imports import params, kwargs, modeling_params, enkf_params, physical_params
 from ICESEE.applications.icepack_model.examples.synthetic_ice_stream._icepack_model import initialize_model
-from ICESEE.src.run_models_da import icesee_model_data_assimilation
+from ICESEE.src.run_model_da.run_models_da import icesee_model_data_assimilation
 from ICESEE.src.parallelization.parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
 
 # --- Initialize MPI ---
