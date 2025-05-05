@@ -5,19 +5,14 @@
 # @author: Brian Kyanjo
 # ==============================================================================
 
-import sys
 import os
 import numpy as np
-import re
 import h5py
-from scipy import linalg
-from scipy.stats import multivariate_normal,norm
 
 
 # --- import utility functions ---
-from _issm_model import *
-sys.path.insert(0, '../../config')
-from _utility_imports import icesee_get_index
+from ICESEE.applications.issm_model.examples.ISMIP._issm_model import *
+from ICESEE.config._utility_imports import icesee_get_index
 
 # --- Forecast step ---
 def forecast_step_single(ensemble=None, **kwargs):

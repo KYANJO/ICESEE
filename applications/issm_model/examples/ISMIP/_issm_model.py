@@ -13,10 +13,9 @@ import numpy as np
 from scipy.stats import multivariate_normal,norm
 
 # --- Utility imports ---
-sys.path.insert(0, '../../config')
-from _utility_imports import icesee_get_index
-from matlab2python.server_utils import run_icesee_with_server
-from matlab2python.mat2py_utils import subprocess_cmd_run
+from ICESEE.config._utility_imports import icesee_get_index
+from ICESEE.applications.issm_model.issm_utils.matlab2python.mat2py_utils import subprocess_cmd_run
+from ICESEE.applications.issm_model.issm_utils.matlab2python.server_utils import run_icesee_with_server
 
 # --- model initialization ---
 def initialize_model(physical_params, modeling_params, comm):

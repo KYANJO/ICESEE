@@ -13,19 +13,18 @@ import socket
 import numpy as np
 import scipy.io as sio
 
-# --- Configuration ---
-sys.path.insert(0, '../../config')
-from _utility_imports import *
-from _utility_imports import params, kwargs, modeling_params, enkf_params, physical_params,UtilsFunctions
-from run_models_da import icesee_model_data_assimilation
-from matlab2python.mat2py_utils import  add_issm_dir_to_sys_path, MatlabServer
-from matlab2python.server_utils import run_icesee_with_server, setup_server_shutdown
+# --- ICESEE imports ---
+from ICESEE.config._utility_imports import *
+from ICESEE.config._utility_imports import params, kwargs, modeling_params, enkf_params, physical_params,UtilsFunctions
+from ICESEE.src.run_model_da.run_models_da import icesee_model_data_assimilation
+from ICESEE.src.parallelization.parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
 
-# --- Utility Functions ---
-from _issm_model import initialize_model
+#  model-specific imports
+from ICESEE.applications.issm_model.examples.ISMIP._issm_model import initialize_model
+from ICESEE.applications.issm_model.issm_utils.matlab2python.mat2py_utils import add_issm_dir_to_sys_path, MatlabServer
+from ICESEE.applications.issm_model.issm_utils.matlab2python.server_utils import run_icesee_with_server, setup_server_shutdown
 
 # --- Initialize MPI ---
-from parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
 icesee_rank, icesee_size, icesee_comm = ParallelManager().icesee_mpi_init(params)
 
 # --- get current working directory ---
@@ -72,9 +71,9 @@ params["number_obs_instants"] = num_observations
 sio.savemat('model_kwargs.mat', model_kwargs)
 kwargs.update(model_kwargs)
 
-# copy the issm_env.m from icesee_cwd  file to the examples directory
-shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'issm_env.m'), issm_examples_dir)
-shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'matlab_server.m'), issm_examples_dir)
+# copy the issm_env.m from icesee_cwd  file to the examples directory             
+shutil.copy(os.path.join(icesee_cwd,'..','..','issm_utils','matlab2python', 'issm_env.m'), issm_examples_dir)
+shutil.copy(os.path.join(icesee_cwd,'..','..','issm_utils','matlab2python', 'matlab_server.m'), issm_examples_dir)
 shutil.copy(os.path.join(icesee_cwd, 'model_kwargs.mat'), issm_examples_dir)
 
 # --- change directory to the examples directory ---
