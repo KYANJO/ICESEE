@@ -13,7 +13,7 @@ import numpy as np
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["PETSC_CONFIGURE_OPTIONS"] = "--download-mpich-device=ch3:sock"
 
-# from mpi4py import MPI
+# --- firedrake imports ---
 import firedrake
 from firedrake.petsc import PETSc
 
