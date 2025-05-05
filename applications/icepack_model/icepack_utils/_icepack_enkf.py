@@ -8,12 +8,8 @@
 import numpy as np
 
 # --- import run_simulation function from the available examples ---
-# from synthetic_ice_stream._icepack_model import *
 from ICESEE.applications.icepack_model.examples.synthetic_ice_stream._icepack_model import *
-# --- Utility imports ---
-# sys.path.insert(0, '../../config')
 from ICESEE.config._utility_imports import icesee_get_index
-# from _utility_imports import icesee_get_index
 
 
 # --- Forecast step ---

@@ -27,8 +27,6 @@ from icepack.constants import (
 )
 
 # --- Utility imports ---
-# sys.path.insert(0, '../../../config')
-# from _utility_imports import icesee_get_index
 from ICESEE.config._utility_imports import icesee_get_index
 
 # --- model initialization ---
