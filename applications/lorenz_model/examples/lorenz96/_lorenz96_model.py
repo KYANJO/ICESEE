@@ -7,6 +7,14 @@
 
 import numpy as np
 
+# --- Utility imports ---
+from ICESEE.config._utility_imports import icesee_get_index
+
+# --- model initialization ---
+def initialize_model(physical_params, modeling_params, comm):
+    """des: initialize the icepack model"""
+    pass
+
 # --- run function for the lorenz96 model ---
 def Lorenz96(state, **kwargs):
     """des: Lorenz96 model function
@@ -43,11 +51,21 @@ def RK4(rhs, state, **kwargs):
     return state + dt/6*(k1 + 2*k2 + 2*k3 + k4)
 
 # --- Run similation for the Lorenz96 model ---
-def run_simulation(ensemble, **kwargs):
+def run_model(ensemble, **kwargs):
     """des: Lorenz96 model function
         inputs: ensemble - current ensemble state of the model
                 **kwargs - additional arguments for the model
         outputs: model run
     """
-    
-    return RK4(Lorenz96, ensemble, **kwargs)
+
+    # call the icesee_get_index function to get the indices of the state variables
+    vecs, indx_map, dim_per_proc = icesee_get_index(ensemble, **kwargs)
+     
+    # Call the RK4 function to push the state forward in time
+    state = RK4(Lorenz96, ensemble, **kwargs)
+
+    # return the updated state
+    updated_state = {'x' : state[indx_map['x']],
+                     'y' : state[indx_map['y']],
+                     'z' : state[indx_map['z']]}
+    return updated_state

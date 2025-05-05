@@ -235,3 +235,7 @@ if not flag_jupyter:
 
     # update kwargs dictonary with params
     kwargs.update({'params': params})
+    kwargs.update({'physical_params': physical_params})
+    kwargs.update({'modeling_params': modeling_params})
+    kwargs.update({'enkf_params': enkf_params})
+    

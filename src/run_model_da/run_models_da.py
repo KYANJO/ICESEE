@@ -415,8 +415,8 @@ def icesee_model_data_assimilation(model=None, filter_type=None, **model_kwargs)
     params            = model_kwargs.get("params",None)              # parameters
     Q_err             = model_kwargs.get("Q_err",None)               # process noise
     commandlinerun    = model_kwargs.get("commandlinerun",None)      # run through the terminal
-    Lx, Ly            = model_kwargs.get("Lx",0.0), model_kwargs.get("Ly",0.0)
-    nx, ny            = model_kwargs.get("nx",0.0), model_kwargs.get("ny",0.0)
+    Lx, Ly            = model_kwargs.get("Lx",1.0), model_kwargs.get("Ly",1.0)
+    nx, ny            = model_kwargs.get("nx",0.2), model_kwargs.get("ny",0.2)
     b_in, b_out       = model_kwargs.get("b_in",0.0), model_kwargs.get("b_out",0.0) 
 
     # --- call curently supported model Class
