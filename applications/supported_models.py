@@ -29,17 +29,17 @@ class SupportedModels:
             "status": "supported",
         },
         "issm": {
-            "module": "issm.issm_utils._issm_enkf",
+            "module": "issm_model.issm_utils._issm_enkf",
             "description": "ISSM model",
             "status": "supported",
         },
         "lorenz96": {
-            "module": "lorenz96.lorenz96_enkf",
+            "module": "lorenz_model.lorenz_utils._lorenz_enkf",
             "description": "Lorenz96 model",
             "status": "supported",
         },
         "flowline": {
-            "module": "flowline._flowline_enkf",
+            "module": "flowline_model.flowline_utils._flowline_enkf",
             "description": "Flowline model",
             "status": "development",
         },
