@@ -1,0 +1,23 @@
+# External dependencies requiring manual installation before using ICESEE
+# Follow the official installation instructions for each package
+
+# Firedrake and related packages (install via https://www.firedrakeproject.org/download.html)
+firedrake @ git+ssh://git@github.com/firedrakeproject/firedrake.git@e21c4bbccbc815abd55c0d249a795aba854c13bb
+fenics_fiat @ git+ssh://git@github.com/firedrakeproject/fiat.git@15ae3246a5342e91ca6719e96c5c195954d94ed4
+fenics_ufl @ git+ssh://git@github.com/firedrakeproject/ufl.git@5da0ab98d10ef4e0e26b39a42b0e6b9fca1684c0
+libsupermesh @ git+ssh://git@github.com/firedrakeproject/libsupermesh.git@f87cbfdad9edeb12d47118e13564d45f66876322
+loopy @ git+ssh://git@github.com/firedrakeproject/loopy.git@ad07454c9c3e039a7d4d2a4fc759f23e33763864
+pyadjoint_ad @ git+ssh://git@github.com/dolfin-adjoint/pyadjoint.git@da58d45c5a4dafe529e215f977e108fbabc2f360
+pytest_mpi @ git+ssh://git@github.com/firedrakeproject/pytest-mpi.git@f5668e496524b6e356cbcf5f5cd3b094272fcf74
+
+# Local or custom installations (follow project-specific instructions)
+h5py @ file:///Users/bkyanjo3/firedrake/src/h5py
+petsc4py @ file:///Users/bkyanjo3/firedrake/src/petsc/src/binding/petsc4py
+icepack @ file:///Users/bkyanjo3/icepack
+
+# Other packages requiring external setup
+gmsh==4.13.1  # Requires system-level installation (e.g., via apt, brew, or https://gmsh.info/)
+meshio @ git+https://github.com/icepack/meshio.git@c9b5c21d23ce17ab86c5db4420914a7a07b88964
+ROL @ git+https://github.com/icepack/pyrol.git@3bc1802e436eda8949a286abf54528c7a882f706
+roltrilinos @ git+https://github.com/icepack/Trilinos.git@190384db6cb1d148cea36f2d8d69033a90b2d991
+vtk==9.4.1  # Requires system-level installation (e.g., via apt, brew, or https://vtk.org/download/)

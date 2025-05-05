@@ -13,9 +13,9 @@ import numpy as np
 from scipy.stats import multivariate_normal,norm
 
 # --- Utility imports ---
-sys.path.insert(0, '../../config')
-from _utility_imports import icesee_get_index
-from matlab2python.server_utils import run_icesee_with_server
+from ICESEE.config._utility_imports import icesee_get_index
+from ICESEE.applications.issm_model.issm_utils.matlab2python.mat2py_utils import subprocess_cmd_run
+from ICESEE.applications.issm_model.issm_utils.matlab2python.server_utils import run_icesee_with_server
 
 # --- model initialization ---
 def initialize_model(physical_params, modeling_params, comm):
@@ -37,12 +37,13 @@ def initialize_model(physical_params, modeling_params, comm):
     data_path   = modeling_params.get('data_path')
     issm_cmd = f"run(\'issm_env\'); initialize_model({icesee_rank}, {icesee_size})"
     result = run_icesee_with_server(lambda: server.send_command(issm_cmd),server,False,comm)
+    
     # if not result:
     #     sys.exit(1)
     
     # fetch model size from output file
     try: 
-        output_filename = f'{icesee_path}{data_path}/ensemble_init_{icesee_rank}.h5'
+        output_filename = f'{icesee_path}/{data_path}/ensemble_init_{icesee_rank}.h5'
         # print(f"[DEBUG] Attempting to open file: {output_filename}")
         if not os.path.exists(output_filename):
             print(f"[ERROR] File does not exist: {output_filename}")
@@ -83,13 +84,35 @@ def ISSM_model(**kwargs):
 
     
     # --- call the run_model.m function ---
-    server = kwargs.get('server')
+    server   = kwargs.get('server')
+    filename = kwargs.get('fname') 
+    # print(f"file name: {filename}")
 
     try:
-        cmd = f"run(\'issm_env\'); run_model({color},{rank},{nprocs},{k},{dt},{tinitial},{tfinal})"
+        # cmd = f"run('issm_env'); run_model('{filename}',{rank},{nprocs},{k},{dt},{tinitial},{tfinal})"
+        # result = run_icesee_with_server(lambda: server.send_command(cmd),server,False,comm)
+        # subprocess_cmd_run(cmd, nprocs, verbose=True)
+        # cmd = (
+        #     f"matlab -nodisplay -nosplash -nodesktop "
+        #     f"-r \"try; run('issm_env'); run_model('{filename}',{rank},{nprocs},{k},{dt},{tinitial},{tfinal}); "
+        #     f"catch e; disp(getReport(e)); exit(1); end; exit;\""
+        # )
+        # filename = str(filename).replace("'", "")  
+        # cmd = (
+        #     f"matlab -nodisplay -nosplash -nodesktop "
+        #     f"-r \"try; run('issm_env'); run_model('{filename}', {rank}, {nprocs}, {k}, {dt}, {tinitial}, {tfinal}); "
+        #     f"catch e; disp(getReport(e)); exit(1); end; exit\""
+        # )
+        # subprocess_cmd_run(cmd, nprocs, verbose=True)
+
+        # -------> 
+        cmd = (
+            f"run('issm_env'); run_model('{filename}', {rank}, {nprocs}, {k}, {dt}, {tinitial}, {tfinal}); "
+        )
         if not server.send_command(cmd):
             print(f"[DEBUG] Error sending command: {cmd}")
-            return None
+        # <-------
+        #     return None
     except Exception as e:
         print(f"[DEBUG] Error sending command: {e}")
         server.shutdown()
@@ -119,17 +142,21 @@ def run_model(ensemble, **kwargs):
     #  --- change directory to the issm directory ---
     os.chdir(issm_examples_dir)
 
+    # --- filename for data saving
+    fname = 'enkf_state.mat'
+    kwargs.update({'fname': fname})
+
     # try: 
     if True:
         # Generate output filename based on rank
-        icesee_path = kwargs.get('icesee_path')
-        data_path = kwargs.get('data_path')
-        input_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
+        icesee_path    = kwargs.get('icesee_path')
+        data_path      = kwargs.get('data_path')
+        input_filename = f'{icesee_path}/{data_path}/ensemble_output_{rank}.h5'
 
         #  write the ensemble to the h5 file
         k = kwargs.get('k')
 
-        # -- call teh icess_get_index function to get the index of the ensemble
+        # -- call the icess_get_index function to get the index of the ensemble
         print(f"[DEBUG] run_model {rank} of {comm.Get_size()}")
         # print(f"[DEBUG] Ensemble: {ensemble[:5]}")
         vecs, indx_map, _ = icesee_get_index(ensemble, **kwargs)
@@ -160,11 +187,7 @@ def run_model(ensemble, **kwargs):
         #  --- read the output from the h5 file ISSM model ---
         # try:
         if True:
-            # output_filename = f'ensemble_output_{rank}.h5'
-            icesee_path = kwargs.get('icesee_path')
-            data_path = kwargs.get('data_path')
-            # output_filename = f'ensemble_output_{rank}.h5'
-            output_filename = f'{icesee_path}{data_path}/ensemble_output_{rank}.h5'
+            output_filename = f'{icesee_path}/{data_path}/ensemble_output_{rank}.h5'
             with h5py.File(output_filename, 'r',driver='mpio',comm=comm) as f:
                 return {
                 'Vx': f['Vx'][0],

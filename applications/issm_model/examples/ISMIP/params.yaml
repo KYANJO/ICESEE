@@ -63,5 +63,5 @@ enkf-parameters:
   n_modeltasks: 1                     # number of model tasks (for MPI)
   commandlinerun: "True"              # command line run flag: True, False
   execution_flag: 2                   #`execution flag: 0 ->default, 1 -> sequntial, 2 -> even_distribution_of_problem size, 3 -> even_distribution_of_problem size with load balancing
-  data_path: /_modelrun_datasets
+  data_path: _modelrun_datasets
  

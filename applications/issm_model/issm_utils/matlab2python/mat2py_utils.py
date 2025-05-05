@@ -26,26 +26,69 @@ class MatlabServer:
         self.process = None
         self.verbose = verbose
 
+    # def kill_matlab_processes(self):
+    #     matlab_count = 0
+    #     for proc in psutil.process_iter(['name', 'pid']):
+    #         try:
+    #             # Check for MATLAB processes (name varies by OS)
+    #             if 'matlab' in proc.info['name'].lower() or 'MATLAB' in proc.info['name']:
+    #                 print(f"Found MATLAB process: {proc.info['name']} (PID: {proc.info['pid']})")
+    #                 # Terminate the process
+    #                 if platform.system() == "Windows":
+    #                     proc.terminate()  # Windows uses terminate
+    #                 else:
+    #                     proc.send_signal(signal.SIGTERM)  # Unix uses SIGTERM
+    #                 matlab_count += 1
+    #         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+    #             continue
+    
+    #     if matlab_count == 0:
+    #         print("No MATLAB processes found running.")
+    #     else:
+    #         print(f"Terminated {matlab_count} MATLAB process(es).")
+
+
     def kill_matlab_processes(self):
+        import psutil
+        import platform
+        import signal
         matlab_count = 0
-        for proc in psutil.process_iter(['name', 'pid']):
+        for proc in psutil.process_iter(['name', 'pid', 'cmdline']):
             try:
                 # Check for MATLAB processes (name varies by OS)
                 if 'matlab' in proc.info['name'].lower() or 'MATLAB' in proc.info['name']:
-                    print(f"Found MATLAB process: {proc.info['name']} (PID: {proc.info['pid']})")
-                    # Terminate the process
-                    if platform.system() == "Windows":
-                        proc.terminate()  # Windows uses terminate
+                    if self.verbose:
+                        print(f"Found MATLAB process: {proc.info['name']} (PID: {proc.info['pid']})")
+                    
+                    # Get command-line arguments to check for GUI-related flags
+                    cmdline = proc.info['cmdline']
+                    is_gui = True  # Assume GUI unless proven otherwise
+                    
+                    # Check command-line arguments for non-GUI flags
+                    if cmdline and any(flag in cmdline for flag in ['-nodisplay', '-nodesktop']):
+                        is_gui = False  # Non-GUI instance
+                    
+                    if not is_gui:
+                        # Terminate non-GUI process
+                        if platform.system() == "Windows":
+                            proc.terminate()  # Windows uses terminate
+                        else:
+                            proc.send_signal(signal.SIGTERM)  # Unix uses SIGTERM
+                        matlab_count += 1
+
+                        if self.verbose:
+                            print(f"Terminated MATLAB process (PID: {proc.info['pid']})")
                     else:
-                        proc.send_signal(signal.SIGTERM)  # Unix uses SIGTERM
-                    matlab_count += 1
+                        print(f"Skipped GUI MATLAB process (PID: {proc.info['pid']})")
+                        
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
     
-        if matlab_count == 0:
-            print("No MATLAB processes found running.")
-        else:
-            print(f"Terminated {matlab_count} MATLAB process(es).")
+        if self.verbose:        
+            if matlab_count == 0:
+                print("No non-GUI MATLAB processes found to terminate.")
+            else:
+                print(f"Terminated {matlab_count} non-GUI MATLAB process(es).")
 
 
     def launch(self):
@@ -189,14 +232,6 @@ class MatlabServer:
 #  ---- end of MatlabServer class ----
 
 def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
-    """
-    Run ISSM using a MATLAB script via subprocess.Popen.
-
-    Parameters:
-    - issm_cmd: Full command string to run ISSM in MATLAB
-    - nprocs: Number of processors to pass to runme.m (for display/debug)
-    - verbose: If True, print stdout (trimmed) and stderr (only if non-empty)
-    """
     try:
         process = subprocess.Popen(
             issm_cmd,
@@ -210,30 +245,71 @@ def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
 
         if verbose:
             stdout_lines = stdout.splitlines()
-            trimmed_stdout = "\n".join(stdout_lines[9:])  # Skip banner
+            trimmed_stdout = "\n".join(stdout_lines[9:])
             print(f"\n[ICESEE] ➤ Running ISSM with {nprocs} processors")
             print("------ ICESEE<->MATLAB STDOUT ------")
             print(trimmed_stdout.strip())
 
-            if stderr.strip():  # Only print stderr if there's content
+            if stderr.strip():
                 print("------ ICESEE<->MATLAB STDERR ------")
                 print(stderr.strip())
 
         if process.returncode != 0:
-            # raise subprocess.CalledProcessError(
-            #     process.returncode, issm_cmd, output=stdout, stderr=stderr
-            # )
             raise subprocess.CalledProcessError(process.returncode, issm_cmd)
 
     except FileNotFoundError:
         print("❌ Error: MATLAB not found in PATH.")
     except subprocess.CalledProcessError as e:
         print(f"❌ MATLAB exited with error code {e.returncode}")
-        if e.stderr.strip():
-            print("------ MATLAB STDERR ------")
-            print(e.stderr.strip())
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
+        
+# def subprocess_cmd_run(issm_cmd, nprocs: int, verbose: bool = True):
+#     """
+#     Run ISSM using a MATLAB script via subprocess.Popen.
+
+#     Parameters:
+#     - issm_cmd: Full command string to run ISSM in MATLAB
+#     - nprocs: Number of processors to pass to runme.m (for display/debug)
+#     - verbose: If True, print stdout (trimmed) and stderr (only if non-empty)
+#     """
+#     try:
+#         process = subprocess.Popen(
+#             issm_cmd,
+#             shell=True,
+#             stdout=subprocess.PIPE,
+#             stderr=subprocess.PIPE,
+#             universal_newlines=True
+#         )
+
+#         stdout, stderr = process.communicate()
+
+#         if verbose:
+#             stdout_lines = stdout.splitlines()
+#             trimmed_stdout = "\n".join(stdout_lines[9:])  # Skip banner
+#             print(f"\n[ICESEE] ➤ Running ISSM with {nprocs} processors")
+#             print("------ ICESEE<->MATLAB STDOUT ------")
+#             print(trimmed_stdout.strip())
+
+#             if stderr.strip():  # Only print stderr if there's content
+#                 print("------ ICESEE<->MATLAB STDERR ------")
+#                 print(stderr.strip())
+
+#         if process.returncode != 0:
+#             # raise subprocess.CalledProcessError(
+#             #     process.returncode, issm_cmd, output=stdout, stderr=stderr
+#             # )
+#             raise subprocess.CalledProcessError(process.returncode, issm_cmd)
+
+#     except FileNotFoundError:
+#         print("❌ Error: MATLAB not found in PATH.")
+#     except subprocess.CalledProcessError as e:
+#         print(f"❌ MATLAB exited with error code {e.returncode}")
+#         if e.stderr.strip():
+#             print("------ MATLAB STDERR ------")
+#             print(e.stderr.strip())
+#     except Exception as e:
+#         print(f"❌ Unexpected error: {e}")
         
 #  --- Add ISSM_DIR to sys.path ---
 def add_issm_dir_to_sys_path(issm_dir=None):

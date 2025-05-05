@@ -24,12 +24,12 @@ class SupportedModels:
     # Dictionary mapping model names to their respective import paths and states
     MODEL_CONFIG = {
         "icepack": {
-            "module": "icepack_model._icepack_enkf",
+            "module": "icepack_model.icepack_utils._icepack_enkf",
             "description": "Icepack model",
             "status": "supported",
         },
         "issm": {
-            "module": "issm._issm_enkf",
+            "module": "issm.issm_utils._issm_enkf",
             "description": "ISSM model",
             "status": "supported",
         },

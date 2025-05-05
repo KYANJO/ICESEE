@@ -13,23 +13,17 @@ import numpy as np
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["PETSC_CONFIGURE_OPTIONS"] = "--download-mpich-device=ch3:sock"
 
-# from mpi4py import MPI
+# --- firedrake imports ---
 import firedrake
 from firedrake.petsc import PETSc
 
-# --- Utility imports ---
-sys.path.insert(0, '../../../config')
-from _utility_imports import * #imports all the necessary modules
-# from _utility_imports import params, kwargs, modeling_params, enkf_params, physical_params
-applications_dir = os.path.join(project_root, 'applications','icepack_model')
-sys.path.insert(0, applications_dir)
-
-# --- Utility Functions ---
-from _icepack_model import initialize_model
-from run_models_da import icesee_model_data_assimilation
+from ICESEE.config._utility_imports import *
+from ICESEE.config._utility_imports import params, kwargs, modeling_params, enkf_params, physical_params
+from ICESEE.applications.icepack_model.examples.synthetic_ice_stream._icepack_model import initialize_model
+from ICESEE.src.run_model_da.run_models_da import icesee_model_data_assimilation
+from ICESEE.src.parallelization.parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
 
 # --- Initialize MPI ---
-from parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
 rank, size, comm = ParallelManager().icesee_mpi_init(params)
 
 PETSc.Sys.Print("Fetching the model parameters ...")

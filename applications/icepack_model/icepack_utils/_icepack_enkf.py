@@ -5,20 +5,11 @@
 # @author: Brian Kyanjo
 # ==============================================================================
 
-import sys
-import os
 import numpy as np
-import re
-import h5py
-from scipy.stats import multivariate_normal,norm
 
 # --- import run_simulation function from the available examples ---
-from synthetic_ice_stream._icepack_model import *
-from scipy import linalg
-
-# --- Utility imports ---
-sys.path.insert(0, '../../config')
-from _utility_imports import icesee_get_index
+from ICESEE.applications.icepack_model.examples.synthetic_ice_stream._icepack_model import *
+from ICESEE.config._utility_imports import icesee_get_index
 
 
 # --- Forecast step ---
@@ -558,56 +549,3 @@ def initialize_ensemble_debug(color,**kwargs):
 
 
     return statevec_ens,shape_
-
-def generate_random_field(kernel='gaussian',**kwargs):
-    """
-    Generate a 2D pseudorandom field with mean 0 and variance 1.
-    
-    Parameters:
-    - size: tuple of (height, width) for the field dimensions
-    - length_scale: float, controls smoothness (larger = smoother)
-    - num_points: int, number of grid points per dimension
-    - kernel: str, type of covariance kernel ('gaussian' or 'exponential')
-    
-    Returns:
-    - field: 2D numpy array with the random field
-    """
-
-    Lx, Ly = kwargs["Lx"], kwargs["Ly"]
-    nx, ny = kwargs["nx"], kwargs["ny"]
-
-    length_scale = 0.2*max(Lx,Ly)
-    
-    # Create grid
-    x = np.linspace(0, Lx, nx+1)
-    y = np.linspace(0, Ly, ny+1)
-    X, Y = np.meshgrid(x, y)
-    
-    # Compute distances between all points
-    coords = np.stack([X.flatten(), Y.flatten()], axis=1)
-    dist = np.sqrt(((coords[:, None, :] - coords[None, :, :]) ** 2).sum(axis=2))
-    
-    # Define covariance kernel
-    if kernel == 'gaussian':
-        cov = np.exp(-dist**2 / (2 * length_scale**2))
-    elif kernel == 'exponential':
-        cov = np.exp(-dist / length_scale)
-    else:
-        raise ValueError("Kernel must be 'gaussian' or 'exponential'")
-    
-    # Ensure positive definiteness and symmetry
-    cov = (cov + cov.T) / 2  # Make perfectly symmetric
-    cov += np.eye(cov.shape[0]) * 1e-6  # Add small jitter for stability
-    
-    # Generate random field using Cholesky decomposition
-    L = linalg.cholesky(cov, lower=True)
-    # z = np.random.normal(0, 1, size=num_points * num_points)
-    z = np.random.normal(0, 1, size=(nx+1)*(ny+1))
-    field_flat = L @ z
-    
-    # Reshape and normalize to mean 0, variance 1
-    # field = field_flat.reshape(num_points, num_points)
-    field = field_flat.reshape(nx+1, ny+1)
-    field = (field - np.mean(field)) / np.std(field)
-    
-    return field

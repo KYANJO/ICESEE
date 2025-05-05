@@ -77,6 +77,7 @@ if not flag_jupyter:
     parser.add_argument('--default_run', action='store_true', help='default run')
     parser.add_argument('--sequential_run', action='store_true', help='sequential run')
     parser.add_argument('--even_distribution', action='store_true', help='even distribution')
+    parser.add_argument('--data_path', type=str, required=False, default= '_modelrun_datasets', help='folder to save data for single or multiple runs')
     parser.add_argument('execution_mode', type=int, choices=[0, 1, 2], nargs='?', help='Execution mode: 0=default_run, 1=sequential_run, 2=even_distribution')
 
     args = parser.parse_args()
@@ -104,6 +105,7 @@ if not flag_jupyter:
 
     # Explicit use of parameters
     Nens = int(args.Nens)
+    data_path = args.data_path
 
     # Create params dictionary
     params = {
@@ -111,6 +113,7 @@ if not flag_jupyter:
         "default_run": args.default_run,
         "sequential_run": args.sequential_run,
         "even_distribution": args.even_distribution,
+        "data_path": args.data_path,
     }
 
     # print(f"Execution mode selected: {selected_mode}")
@@ -122,7 +125,7 @@ if not flag_jupyter:
 
     physical_params = get_section(parameters, "physical-parameters")
     modeling_params = get_section(parameters, "modeling-parameters")
-    enkf_params = get_section(parameters, "enkf-parameters")
+    enkf_params     = get_section(parameters, "enkf-parameters")
 
     # --- Ensemble Parameters ---
     params.update({
@@ -139,13 +142,15 @@ if not flag_jupyter:
         "parallel_flag": enkf_params.get("parallel_flag", "serial"),
         "n_modeltasks": int(enkf_params.get("n_modeltasks", 1)),
         "execution_flag": int(enkf_params.get("execution_flag", 0)),
-        "data_path": enkf_params.get("data_path",  "/_modelrun_datasets"),
         "model_name": enkf_params.get("model_name", "model"),
     })
 
     # --- incase CL args not provided ---
     if Nens == 1:
         params["Nens"] = int(float(enkf_params.get("Nens", 1)))
+
+    if data_path == '_modelrun_datasets':
+        params["data_path"] = enkf_params.get("data_path", "_modelrun_datasets")
     
     if run_flag:
         execution_flag = params.get("execution_flag")

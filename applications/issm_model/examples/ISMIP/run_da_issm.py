@@ -13,19 +13,18 @@ import socket
 import numpy as np
 import scipy.io as sio
 
-# --- Configuration ---
-sys.path.insert(0, '../../config')
-from _utility_imports import *
-from _utility_imports import params, kwargs, modeling_params, enkf_params, physical_params,UtilsFunctions
-from run_models_da import icesee_model_data_assimilation
-from matlab2python.mat2py_utils import  add_issm_dir_to_sys_path, MatlabServer
-from matlab2python.server_utils import run_icesee_with_server, setup_server_shutdown
+# --- ICESEE imports ---
+from ICESEE.config._utility_imports import *
+from ICESEE.config._utility_imports import params, kwargs, modeling_params, enkf_params, physical_params,UtilsFunctions
+from ICESEE.src.run_model_da.run_models_da import icesee_model_data_assimilation
+from ICESEE.src.parallelization.parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
 
-# --- Utility Functions ---
-from _issm_model import initialize_model
+#  model-specific imports
+from ICESEE.applications.issm_model.examples.ISMIP._issm_model import initialize_model
+from ICESEE.applications.issm_model.issm_utils.matlab2python.mat2py_utils import add_issm_dir_to_sys_path, MatlabServer
+from ICESEE.applications.issm_model.issm_utils.matlab2python.server_utils import run_icesee_with_server, setup_server_shutdown
 
 # --- Initialize MPI ---
-from parallel_mpi.icesee_mpi_parallel_manager import ParallelManager
 icesee_rank, icesee_size, icesee_comm = ParallelManager().icesee_mpi_init(params)
 
 # --- get current working directory ---
@@ -72,16 +71,16 @@ params["number_obs_instants"] = num_observations
 sio.savemat('model_kwargs.mat', model_kwargs)
 kwargs.update(model_kwargs)
 
-# copy the issm_env.m from icesee_cwd  file to the examples directory
-shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'issm_env.m'), issm_examples_dir)
-shutil.copy(os.path.join(icesee_cwd,'matlab2python', 'matlab_server.m'), issm_examples_dir)
+# copy the issm_env.m from icesee_cwd  file to the examples directory             
+shutil.copy(os.path.join(icesee_cwd,'..','..','issm_utils','matlab2python', 'issm_env.m'), issm_examples_dir)
+shutil.copy(os.path.join(icesee_cwd,'..','..','issm_utils','matlab2python', 'matlab_server.m'), issm_examples_dir)
 shutil.copy(os.path.join(icesee_cwd, 'model_kwargs.mat'), issm_examples_dir)
 
 # --- change directory to the examples directory ---
 os.chdir(issm_examples_dir)
 
 # --- intialize the matlab server ---
-server = MatlabServer(verbose=0)
+server = MatlabServer(verbose=1)
 server.launch() # start the server
 
 # Set up global shutdown handler
@@ -130,12 +129,21 @@ if False:
             print(f"[DEBUG] Error shutting down server: {e}")
         sys.exit(1)
 else:
-    result = run_icesee_with_server(
+    # result = run_icesee_with_server(
+    #     icesee_model_data_assimilation(
+    #     enkf_params["model_name"],
+    #     enkf_params["filter_type"],
+    #     **kwargs), server, False,icesee_comm,verbose=False
+    # )
+    try:
         icesee_model_data_assimilation(
-        enkf_params["model_name"],
-        enkf_params["filter_type"],
-        **kwargs), server, False,icesee_comm,verbose=False
-    )
+            enkf_params["model_name"],
+            enkf_params["filter_type"],
+            **kwargs)
+        server.shutdown()
+    except Exception as e:
+        print(f"[run_da_issm] Error running the model: {e}")
+        result = None
     # server.kill_matlab_processes()
 #     print("Checking stdout:", sys.stdout, file=sys.stderr)  # Use stderr to avoid stdout issues
 # sys.stdout.flush()
